@@ -1,0 +1,73 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-msn}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-msn}
+      POSTGRES_DB: ${POSTGRES_DB:-msn}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - msn
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-msn}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    networks:
+      - msn
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-msn}:${POSTGRES_PASSWORD:-msn}@postgres:5432/${POSTGRES_DB:-msn}
+      REDIS_URL: redis://redis:6379/0
+    networks:
+      - msn
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    networks:
+      - msn
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend/src:/app/src
+
+networks:
+  msn:
+    driver: bridge
+
+volumes:
+  postgres_data:

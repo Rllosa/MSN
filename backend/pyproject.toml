@@ -1,0 +1,25 @@
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+# E/W: pycodestyle, F: pyflakes, I: isort, N: pep8-naming, UP: pyupgrade
+select = ["E", "F", "I", "N", "W", "UP"]
+ignore = []
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+# Add backend/ to sys.path so `import app.main` resolves when running from backend/
+pythonpath = ["."]
+
+[tool.coverage.run]
+source = ["app"]
+omit = ["tests/*"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
