@@ -7,6 +7,10 @@ target-version = "py311"
 select = ["E", "F", "I", "N", "W", "UP"]
 ignore = []
 
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+force-sort-within-sections = true
+
 [tool.ruff.format]
 quote-style = "double"
 

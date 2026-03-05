@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import asyncio
 
-import asyncpg
-import pytest
 from alembic import command
 from alembic.config import Config
+import asyncpg
+import pytest
 
 
 def _alembic_cfg(url: str) -> Config:
@@ -48,11 +48,10 @@ async def test_downgrade_removes_all_tables(clean_db: None, test_db_url: str) ->
 
 
 @pytest.mark.asyncio
-async def test_upgrade_is_idempotent_via_alembic_version(clean_db: None, test_db_url: str) -> None:
-    """Running upgrade head twice should not raise — alembic_version prevents re-applying."""
+async def test_upgrade_idempotent(clean_db: None, test_db_url: str) -> None:
+    # Running upgrade head twice must be a no-op; alembic_version prevents re-applying
     cfg = _alembic_cfg(test_db_url)
     await asyncio.to_thread(command.upgrade, cfg, "head")
-    # Second run: already at head, should be a no-op
     await asyncio.to_thread(command.upgrade, cfg, "head")
     tables = await _table_names(test_db_url)
     assert EXPECTED_TABLES.issubset(tables)
