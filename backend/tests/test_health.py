@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from httpx import ASGITransport, AsyncClient
 import pytest
+from httpx import ASGITransport, AsyncClient
 
 from app.main import app
 

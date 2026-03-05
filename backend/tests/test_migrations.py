@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import asyncio
 
-from alembic import command
-from alembic.config import Config
 import asyncpg
 import pytest
+from alembic import command
+from alembic.config import Config
 
 
 def _alembic_cfg(url: str) -> Config:
