@@ -97,7 +97,9 @@ def upgrade() -> None:
         ),
         sa.Column(
             "platform",
-            sa.Enum("airbnb", "booking", "whatsapp", name="platform_enum", create_type=False),
+            sa.Enum(
+                "airbnb", "booking", "whatsapp", name="platform_enum", create_type=False
+            ),
             nullable=False,
         ),
         sa.Column("guest_name", sa.String(255), nullable=False),
@@ -153,7 +155,11 @@ def upgrade() -> None:
         sa.Column(
             "conversation_id",
             UUID(as_uuid=True),
-            sa.ForeignKey("conversations.id", ondelete="CASCADE", name="fk_messages_conversation_id"),
+            sa.ForeignKey(
+                "conversations.id",
+                ondelete="CASCADE",
+                name="fk_messages_conversation_id",
+            ),
             nullable=False,
         ),
         # SHA-256 hex of the email Message-ID header — used for deduplication (SOLO-111)

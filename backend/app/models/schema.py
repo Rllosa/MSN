@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-# NOTE: These models exist solely for Alembic autogenerate.
-# All runtime database queries use raw parameterized SQL via asyncpg (see §3.2).
-# Do NOT import these models in application code outside of migrations.
-
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase
+
+# NOTE: These models exist solely for Alembic autogenerate.
+# All runtime database queries use raw parameterized SQL via asyncpg (see §3.2).
+# Do NOT import these models in application code outside of migrations.
 
 # Enum types — created by migration, not by SQLAlchemy (create_type=False)
 platform_enum = sa.Enum(
