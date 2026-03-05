@@ -1,0 +1,15 @@
+# Exclude everything not needed for the Docker build context.
+# Prevents secrets, test files, and cache from bloating the image.
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+htmlcov/
+.coverage
+coverage.xml
+tests/
+.env
+.env.*
+requirements-dev.txt
