@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
+from sqlalchemy.dialects.postgresql import ARRAY, ENUM as PgEnum, JSONB, UUID
 
 from alembic import op
 
@@ -21,6 +21,25 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    # --- Enum types ---
+    # PostgreSQL has no CREATE TYPE IF NOT EXISTS; DO block handles idempotency (§3.4)
+    op.execute(
+        """
+        DO $$ BEGIN
+            CREATE TYPE platform_enum AS ENUM ('airbnb', 'booking', 'whatsapp');
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$
+        """
+    )
+    op.execute(
+        """
+        DO $$ BEGIN
+            CREATE TYPE direction_enum AS ENUM ('inbound', 'outbound');
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$
+        """
+    )
+
     # --- properties ---
     op.create_table(
         "properties",
@@ -78,7 +97,7 @@ def upgrade() -> None:
         ),
         sa.Column(
             "platform",
-            sa.Enum("airbnb", "booking", "whatsapp", name="platform_enum"),
+            PgEnum("airbnb", "booking", "whatsapp", name="platform_enum", create_type=False),
             nullable=False,
         ),
         sa.Column("guest_name", sa.String(255), nullable=False),
@@ -145,7 +164,7 @@ def upgrade() -> None:
         sa.Column("message_id_hash", sa.String(64), nullable=False),
         sa.Column(
             "direction",
-            sa.Enum("inbound", "outbound", name="direction_enum"),
+            PgEnum("inbound", "outbound", name="direction_enum", create_type=False),
             nullable=False,
         ),
         sa.Column("body", sa.Text, nullable=False),
