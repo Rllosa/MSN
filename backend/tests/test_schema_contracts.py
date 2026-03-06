@@ -99,8 +99,7 @@ async def _fk_targets(conn: asyncpg.Connection, table: str) -> dict:
         table,
     )
     return {
-        r["constraint_name"]: f"{r['foreign_table']}.{r['foreign_col']}"
-        for r in rows
+        r["constraint_name"]: f"{r['foreign_table']}.{r['foreign_col']}" for r in rows
     }
 
 
