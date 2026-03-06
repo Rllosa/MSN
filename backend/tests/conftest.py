@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 
 import asyncpg
+import pytest
 import pytest_asyncio
 
 
@@ -18,8 +19,8 @@ def _asyncpg_url(sqlalchemy_url: str) -> str:
     return sqlalchemy_url.replace("postgresql+asyncpg://", "postgresql://")
 
 
-@pytest_asyncio.fixture(scope="session")
-async def test_db_url() -> str:
+@pytest.fixture(scope="session")
+def test_db_url() -> str:
     return _sqlalchemy_url()
 
 
@@ -30,5 +31,7 @@ async def clean_db(test_db_url: str) -> None:
     try:
         await conn.execute("DROP SCHEMA IF EXISTS public CASCADE")
         await conn.execute("CREATE SCHEMA public")
+        await conn.execute("DROP TYPE IF EXISTS platform_enum CASCADE")
+        await conn.execute("DROP TYPE IF EXISTS direction_enum CASCADE")
     finally:
         await conn.close()
