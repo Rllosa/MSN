@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.api.router import router
+from app.api.schemas import HealthResponse
 from app.db.session import dispose_engine, init_engine
 
 
@@ -27,6 +28,6 @@ app = FastAPI(
 app.include_router(router, prefix="/api")
 
 
-@app.get("/health")
-async def health() -> dict[str, str]:
-    return {"status": "ok"}
+@app.get("/health", response_model=HealthResponse)
+async def health() -> HealthResponse:
+    return HealthResponse(status="ok")

@@ -50,6 +50,10 @@ jobs:
           TEST_DATABASE_URL: postgresql+asyncpg://msn:msn@localhost:5432/msn_test
         run: pytest --cov --cov-report=xml
 
+      - name: Validate OpenAPI schema unchanged
+        working-directory: ${{ github.workspace }}
+        run: python scripts/export_openapi.py && git diff --exit-code schema/openapi.json
+
       - name: Upload coverage
         uses: actions/upload-artifact@v4
         with:
