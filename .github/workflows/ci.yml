@@ -13,6 +13,20 @@ jobs:
     defaults:
       run:
         working-directory: backend
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: msn
+          POSTGRES_PASSWORD: msn
+          POSTGRES_DB: msn_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
 
@@ -32,6 +46,8 @@ jobs:
         run: ruff check . && ruff format --check .
 
       - name: Test
+        env:
+          TEST_DATABASE_URL: postgresql+asyncpg://msn:msn@localhost:5432/msn_test
         run: pytest --cov --cov-report=xml
 
       - name: Upload coverage
