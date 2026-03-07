@@ -8,11 +8,17 @@ from jose import jwt
 from app.config import get_settings
 
 
-def create_access_token(user_id: str, email: str) -> str:
+def create_access_token(user_id: str, email: str, is_admin: bool = False) -> str:
     s = get_settings()
     expire = datetime.now(UTC) + timedelta(minutes=s.jwt_access_token_expire_minutes)
     return jwt.encode(
-        {"sub": user_id, "email": email, "type": "access", "exp": expire},
+        {
+            "sub": user_id,
+            "email": email,
+            "type": "access",
+            "is_admin": is_admin,
+            "exp": expire,
+        },
         s.jwt_secret_key,
         algorithm=s.jwt_algorithm,
     )
