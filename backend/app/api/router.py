@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-router = APIRouter()
+from app.api.auth import router as auth_router
 
-# Routes mounted here as tasks are completed:
-# TODO(SOLO-105): auth routes (/auth/login, /auth/refresh, /auth/logout)
+router = APIRouter()
+router.include_router(auth_router)
+
 # TODO(SOLO-107): properties routes (/properties)
 # TODO(SOLO-112): conversations + messages routes (/conversations, /messages)

@@ -7,17 +7,20 @@ from fastapi import FastAPI
 
 from app.api.router import router
 from app.api.schemas import HealthResponse
+from app.db.redis import dispose_redis, init_redis
 from app.db.session import dispose_engine, init_engine
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     init_engine()
+    init_redis()
     # TODO(SOLO-108): Start IMAP ingestion worker
     # TODO(SOLO-113): Start Redis pub/sub listener for WebSocket push
     yield
     # TODO(SOLO-108): Stop IMAP ingestion worker
     await dispose_engine()
+    await dispose_redis()
 
 
 app = FastAPI(
