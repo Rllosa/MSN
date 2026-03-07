@@ -32,3 +32,6 @@ structlog==24.4.0
 
 # Rate limiting
 slowapi==0.1.9
+
+# Config / seed scripts
+pyyaml==6.0.2

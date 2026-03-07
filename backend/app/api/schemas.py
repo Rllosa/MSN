@@ -44,3 +44,20 @@ class UpdateUserRequest(BaseModel):
     password: str | None = None
     is_admin: bool | None = None
     is_active: bool | None = None
+
+
+class PropertyInfo(BaseModel):
+    id: str
+    name: str
+    slug: str
+    created_at: datetime
+
+
+class CreatePropertyRequest(BaseModel):
+    name: str
+    slug: str | None = None  # auto-generated from name if omitted
+
+
+class UpdatePropertyRequest(BaseModel):
+    name: str | None = None
+    slug: str | None = None
