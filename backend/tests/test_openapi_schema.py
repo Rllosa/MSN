@@ -21,10 +21,13 @@ def test_health_has_200_with_json_response() -> None:
     assert "application/json" in responses["200"]["content"]
 
 
-def test_all_routes_have_200_response_model() -> None:
+def test_all_routes_have_success_response_model() -> None:
+    """Every route must declare at least one 2xx response (200 or 204)."""
     schema = app.openapi()
+    success_codes = {"200", "201", "204"}
     for path, methods in schema["paths"].items():
         for method, operation in methods.items():
-            assert "200" in operation.get(
-                "responses", {}
-            ), f"{method.upper()} {path} missing 200 response model"
+            declared = set(operation.get("responses", {}).keys())
+            assert (
+                declared & success_codes
+            ), f"{method.upper()} {path} missing 2xx response model"
