@@ -1,0 +1,17 @@
+# Black Palm SXM — 7 managed properties
+# Update names and slugs before running scripts/seed_properties.py on production
+properties:
+  - name: "Villa 1"
+    slug: "villa-1"
+  - name: "Villa 2"
+    slug: "villa-2"
+  - name: "Villa 3"
+    slug: "villa-3"
+  - name: "Villa 4"
+    slug: "villa-4"
+  - name: "Villa 5"
+    slug: "villa-5"
+  - name: "Villa 6"
+    slug: "villa-6"
+  - name: "Villa 7"
+    slug: "villa-7"
