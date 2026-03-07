@@ -31,7 +31,7 @@ async def login(
     row = (
         await session.execute(
             text(
-                "SELECT id::text, email, password_hash, is_active"
+                "SELECT id::text, email, password_hash, is_active, is_admin"
                 " FROM users WHERE email = :email"
             ),
             {"email": body.email},
@@ -46,7 +46,7 @@ async def login(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Account disabled"
         )
 
-    access = create_access_token(row.id, row.email)
+    access = create_access_token(row.id, row.email, is_admin=row.is_admin)
     refresh = create_refresh_token(row.id, row.email)
     s = get_settings()
     response.set_cookie(
@@ -109,4 +109,9 @@ async def logout(
 
 @router.get("/me", response_model=UserInfo)
 async def me(current_user: CurrentUser) -> UserInfo:
-    return UserInfo(id=current_user["id"], email=current_user["email"], is_active=True)
+    return UserInfo(
+        id=current_user["id"],
+        email=current_user["email"],
+        is_active=True,
+        is_admin=current_user.get("is_admin", False),
+    )
