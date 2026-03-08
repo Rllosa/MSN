@@ -8,6 +8,7 @@ from collections.abc import Awaitable, Callable
 import aioimaplib
 
 from app.config import get_settings
+from app.parsers.airbnb import is_airbnb_email, parse_airbnb_email
 
 logger = logging.getLogger(__name__)
 
@@ -16,12 +17,25 @@ _worker_task: asyncio.Task[None] | None = None
 
 
 async def process_email(raw_bytes: bytes) -> None:
-    """No-op stub — replaced by SOLO-109/110 parsers."""
+    """Route raw email to the appropriate platform parser."""
     msg = email.message_from_bytes(raw_bytes)
-    logger.debug(
-        "imap.email_received message_id=%s",
-        msg.get("Message-ID", "<unknown>"),
-    )
+
+    if is_airbnb_email(msg):
+        parsed = parse_airbnb_email(raw_bytes)
+        if parsed:
+            logger.info(
+                "airbnb.parsed guest=%s property=%s conv_id=%s",
+                parsed.guest_name,
+                parsed.property_name,
+                parsed.platform_conversation_id,
+            )
+        # TODO(SOLO-111): write parsed email to DB
+    else:
+        logger.debug(
+            "imap.email_skipped message_id=%s from=%s",
+            msg.get("Message-ID", "<unknown>"),
+            msg.get("From", "<unknown>"),
+        )
 
 
 async def _poll_once(
