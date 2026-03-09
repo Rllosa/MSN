@@ -94,9 +94,8 @@ async def main(update_db: bool) -> None:
                     prop_name,
                 )
                 if row:
-                    print(
-                        f"  updated: {row['name']} → beds24_id={row['beds24_property_id']}"
-                    )
+                    b24 = row["beds24_property_id"]
+                    print(f"  updated: {row['name']} → beds24_id={b24}")
                 else:
                     print(
                         f"  no match in DB for propName={prop_name!r}"
