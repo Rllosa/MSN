@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import email
+import email.utils
 import logging
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from email.message import Message
 
 from bs4 import BeautifulSoup
@@ -73,6 +75,9 @@ class AirbnbParsedEmail:
     reply_to: str  # full address: TOKEN@reply.airbnb.com
     platform_conversation_id: str  # token portion before @
     property_name: str  # raw listing name; caller does case-insensitive DB lookup
+    # Used by ingest layer for deduplication hash and DB timestamp
+    message_id_header: str  # raw Message-ID header value (or fallback synthetic ID)
+    sent_at: datetime | None  # parsed from Date: header; None if absent/unparseable
 
 
 # ---------------------------------------------------------------------------
@@ -95,7 +100,9 @@ def parse_airbnb_email(raw_bytes: bytes) -> AirbnbParsedEmail | None:
     Never raises — graceful degradation per Rule 1.3.
     """
     msg = email.message_from_bytes(raw_bytes)
-    message_id = msg.get("Message-ID", "<unknown>")
+    message_id_header = (msg.get("Message-ID") or "").strip()
+    message_id = message_id_header or "<unknown>"
+    sent_at = _parse_date(msg.get("Date", ""))
 
     # 1. Reply-To → reply address + platform conversation ID
     reply_to_header = msg.get("Reply-To", "").strip()
@@ -103,7 +110,7 @@ def parse_airbnb_email(raw_bytes: bytes) -> AirbnbParsedEmail | None:
     if not m:
         # Reservation-request emails ("Demande pour …") have no Reply-To token —
         # Airbnb expects pre-approval via their UI, not email reply.
-        # TODO(SOLO-111): parse and store these as read-only conversations with a
+        # TODO(SOLO-118): store these as read-only conversations with a
         #   "Répondre sur Airbnb" link instead of an in-app reply box.
         logger.warning(
             "airbnb.parse_failed reason=missing_reply_to message_id=%s",
@@ -149,6 +156,8 @@ def parse_airbnb_email(raw_bytes: bytes) -> AirbnbParsedEmail | None:
         reply_to=reply_to,
         platform_conversation_id=platform_conversation_id,
         property_name=property_name,
+        message_id_header=message_id_header or reply_to,
+        sent_at=sent_at,
     )
 
 
@@ -217,6 +226,17 @@ def _extract_message_body(soup: BeautifulSoup) -> str:
         raw = pattern.sub("", raw)
 
     return raw.strip()
+
+
+def _parse_date(date_str: str) -> datetime | None:
+    """Parse RFC 2822 Date header into a timezone-aware datetime, or None."""
+    if not date_str:
+        return None
+    try:
+        parsed = email.utils.parsedate_to_datetime(date_str)
+        return parsed
+    except Exception:
+        return None
 
 
 def _extract_property_from_body(soup: BeautifulSoup) -> str | None:

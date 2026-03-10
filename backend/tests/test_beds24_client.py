@@ -34,28 +34,42 @@ def _resp(data: object, status_code: int = 200) -> MagicMock:
 
 
 @pytest.mark.asyncio
-async def test_authenticate_success_returns_new_refresh_token() -> None:
-    """Happy-path auth: access token stored, new refresh token returned."""
+async def test_authenticate_no_rotation_returns_none() -> None:
+    """When Beds24 does not rotate, refreshToken absent → returns None."""
+    http = _mock_http()
+    http.get.return_value = _resp({"token": "access-abc", "expiresIn": 86400})
+    client = Beds24Client(http)
+
+    result = await client.authenticate("my-refresh")
+
+    assert result is None
+    assert client._access_token == "access-abc"
+    call_kwargs = http.get.call_args
+    assert "authentication/token" in call_kwargs.args[0]
+    assert call_kwargs.kwargs["headers"]["refreshToken"] == "my-refresh"
+
+
+@pytest.mark.asyncio
+async def test_authenticate_with_rotation_returns_new_token() -> None:
+    """When Beds24 rotates, refreshToken present → returns new refresh token."""
     http = _mock_http()
     http.get.return_value = _resp(
-        {"token": "access-abc", "refreshToken": "refresh-xyz", "authenticated": True}
+        {"token": "access-abc", "expiresIn": 86400, "refreshToken": "refresh-xyz"}
     )
     client = Beds24Client(http)
 
-    new_token = await client.authenticate("old-refresh")
+    result = await client.authenticate("old-refresh")
 
-    assert new_token == "refresh-xyz"
+    assert result == "refresh-xyz"
     assert client._access_token == "access-abc"
-    http.get.assert_called_once()
-    assert "authentication/setup" in http.get.call_args.args[0]
 
 
 @pytest.mark.asyncio
 async def test_authenticate_raises_on_401() -> None:
-    """401 response → Beds24AuthError (token revoked / expired)."""
+    """401 response → Beds24AuthError."""
     http = _mock_http()
     resp = _resp({}, status_code=401)
-    resp.raise_for_status = MagicMock()  # don't raise from raise_for_status
+    resp.raise_for_status = MagicMock()
     http.get.return_value = resp
 
     client = Beds24Client(http)
@@ -63,59 +77,101 @@ async def test_authenticate_raises_on_401() -> None:
         await client.authenticate("bad-token")
 
 
-@pytest.mark.asyncio
-async def test_authenticate_raises_when_not_authenticated() -> None:
-    """authenticated=False in response body → Beds24AuthError."""
-    http = _mock_http()
-    http.get.return_value = _resp({"authenticated": False, "error": "token invalid"})
-
-    client = Beds24Client(http)
-    with pytest.raises(Beds24AuthError):
-        await client.authenticate("bad-token")
-
-
 # ---------------------------------------------------------------------------
-# get_inbox()
+# get_messages()
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_get_inbox_returns_messages() -> None:
-    """get_inbox() passes access token header and returns message list."""
+async def test_get_messages_returns_data_and_pagination() -> None:
+    """get_messages() returns (messages, has_next) correctly."""
     http = _mock_http()
-    messages = [
-        {"id": 1, "propId": 314537, "bookId": 999, "msg": "Hello"},
-        {"id": 2, "propId": 314538, "bookId": 1000, "msg": "Hi there"},
+    msgs = [
+        {"id": 1, "bookingId": 100, "propertyId": 314537, "source": "guest",
+         "message": "Hi"},
+        {"id": 2, "bookingId": 101, "propertyId": 314538, "source": "host",
+         "message": "Hello"},
     ]
-    http.get.return_value = _resp(messages)
-
+    http.get.return_value = _resp(
+        {
+            "success": True,
+            "data": msgs,
+            "pages": {"nextPageExists": True, "nextPageLink": "..."},
+        }
+    )
     client = Beds24Client(http)
     client._access_token = "access-abc"
 
-    result = await client.get_inbox()
+    data, has_next = await client.get_messages(page=1)
 
-    assert result == messages
+    assert data == msgs
+    assert has_next is True
     call_args = http.get.call_args
-    assert "inbox" in call_args.args[0]
+    assert "bookings/messages" in call_args.args[0]
     assert call_args.kwargs["headers"]["token"] == "access-abc"
 
 
 @pytest.mark.asyncio
-async def test_get_inbox_empty_response_returns_empty_list() -> None:
-    """Empty body (no messages) → []."""
+async def test_get_all_guest_messages_filters_host_messages() -> None:
+    """get_all_guest_messages() returns only source=='guest' messages."""
     http = _mock_http()
-    resp = MagicMock(spec=httpx.Response)
-    resp.status_code = 200
-    resp.json.return_value = []
-    resp.text = ""
-    resp.raise_for_status = MagicMock()
-    http.get.return_value = resp
-
+    msgs = [
+        {"id": 1, "bookingId": 100, "source": "guest", "message": "Hi"},
+        {"id": 2, "bookingId": 101, "source": "host", "message": "Hello"},
+        {"id": 3, "bookingId": 102, "source": "guest", "message": "Question"},
+    ]
+    http.get.return_value = _resp(
+        {
+            "success": True,
+            "data": msgs,
+            "pages": {"nextPageExists": False, "nextPageLink": None},
+        }
+    )
     client = Beds24Client(http)
     client._access_token = "access-abc"
 
-    result = await client.get_inbox()
+    result = await client.get_all_guest_messages()
+
+    assert len(result) == 2
+    assert all(m["source"] == "guest" for m in result)
+
+
+# ---------------------------------------------------------------------------
+# get_bookings()
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_get_bookings_batch_fetch() -> None:
+    """get_bookings() passes comma-joined IDs and returns booking list."""
+    http = _mock_http()
+    bookings = [
+        {"id": 100, "channel": "airbnb", "firstName": "Alice", "lastName": "Smith"},
+        {"id": 101, "channel": "booking", "firstName": "Bob", "lastName": "Jones"},
+    ]
+    http.get.return_value = _resp({"success": True, "data": bookings})
+    client = Beds24Client(http)
+    client._access_token = "access-abc"
+
+    result = await client.get_bookings([100, 101])
+
+    assert result == bookings
+    call_args = http.get.call_args
+    assert "bookings" in call_args.args[0]
+    assert "100,101" in call_args.kwargs["params"]["ids"]
+
+
+@pytest.mark.asyncio
+async def test_get_bookings_empty_list_returns_empty() -> None:
+    """get_bookings([]) returns [] without making an API call."""
+    http = _mock_http()
+    client = Beds24Client(http)
+    client._access_token = "access-abc"
+
+    result = await client.get_bookings([])
+
     assert result == []
+    http.get.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -125,14 +181,13 @@ async def test_get_inbox_empty_response_returns_empty_list() -> None:
 
 @pytest.mark.asyncio
 async def test_get_properties_returns_property_list() -> None:
-    """get_properties() hits /properties and returns Beds24 property objects."""
+    """get_properties() hits /properties and returns property objects."""
     http = _mock_http()
     props = [
-        {"propId": 314537, "propName": "Lagoon"},
-        {"propId": 314538, "propName": "Sunrise"},
+        {"id": 314537, "name": "Lagoon  (Apt1) Sea view"},
+        {"id": 314538, "name": "Horizon (Apt3)"},
     ]
-    http.get.return_value = _resp(props)
-
+    http.get.return_value = _resp({"success": True, "data": props})
     client = Beds24Client(http)
     client._access_token = "access-abc"
 

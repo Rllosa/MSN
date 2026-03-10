@@ -85,6 +85,13 @@ class User(Base):
 
 class Conversation(Base):
     __tablename__ = "conversations"
+    __table_args__ = (
+        # Enables ON CONFLICT (platform, guest_contact) DO UPDATE — idempotent upsert
+        sa.UniqueConstraint(
+            "platform", "guest_contact",
+            name="uq_conversations_platform_guest_contact",
+        ),
+    )
 
     id = sa.Column(
         UUID(as_uuid=True),
