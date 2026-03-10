@@ -47,6 +47,7 @@ _ENV_OVERRIDES = {
     "WHATSAPP_ACCESS_TOKEN": "tok",
     "WHATSAPP_VERIFY_TOKEN": "verify",
     "WHATSAPP_APP_SECRET": "secret",
+    "BEDS24_REFRESH_TOKEN": "test-refresh-token",
 }
 
 

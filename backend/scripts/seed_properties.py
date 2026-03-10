@@ -40,20 +40,31 @@ async def main() -> None:
     conn = await asyncpg.connect(dsn)
     try:
         for prop in properties:
+            beds24_id = prop.get("beds24_property_id")
             row = await conn.fetchrow(
                 """
-                INSERT INTO properties (name, slug, is_active)
-                VALUES ($1, $2, TRUE)
+                INSERT INTO properties (name, slug, beds24_property_id)
+                VALUES ($1, $2, $3)
                 ON CONFLICT (slug)
-                DO UPDATE SET name = EXCLUDED.name, is_active = TRUE
-                RETURNING id::text, name, slug,
+                DO UPDATE SET
+                    name = EXCLUDED.name,
+                    beds24_property_id = COALESCE(
+                        EXCLUDED.beds24_property_id,
+                        properties.beds24_property_id
+                    )
+                RETURNING id::text, name, slug, beds24_property_id,
                           (xmax = 0) AS inserted
                 """,
                 prop["name"],
                 prop["slug"],
+                beds24_id,
             )
             action = "inserted" if row["inserted"] else "updated"
-            print(f"  {action}: {row['name']} (slug={row['slug']}, id={row['id']})")
+            b24 = row["beds24_property_id"] or "not set"
+            print(
+                f"  {action}: {row['name']}"
+                f" (slug={row['slug']}, id={row['id']}, beds24_id={b24})"
+            )
     finally:
         await conn.close()
 

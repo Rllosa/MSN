@@ -1,17 +1,24 @@
 # Black Palm SXM — 7 managed properties
-# Update names and slugs before running scripts/seed_properties.py on production
+# beds24_property_id: run scripts/discover_beds24_properties.py to populate
 properties:
-  - name: "Villa 1"
-    slug: "villa-1"
-  - name: "Villa 2"
-    slug: "villa-2"
-  - name: "Villa 3"
-    slug: "villa-3"
-  - name: "Villa 4"
-    slug: "villa-4"
-  - name: "Villa 5"
-    slug: "villa-5"
-  - name: "Villa 6"
-    slug: "villa-6"
-  - name: "Villa 7"
-    slug: "villa-7"
+  - name: "Lagoon"
+    slug: "lagoon"
+    beds24_property_id: null
+  - name: "Sunrise"
+    slug: "sunrise"
+    beds24_property_id: null
+  - name: "Horizon"
+    slug: "horizon"
+    beds24_property_id: null
+  - name: "Delight"
+    slug: "delight"
+    beds24_property_id: null
+  - name: "Sunset"
+    slug: "sunset"
+    beds24_property_id: null
+  - name: "Garden"
+    slug: "garden"
+    beds24_property_id: null
+  - name: "Cosy"
+    slug: "cosy"
+    beds24_property_id: null

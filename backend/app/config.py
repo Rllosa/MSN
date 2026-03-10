@@ -12,6 +12,10 @@ class Settings(BaseSettings):
     database_url: str
     redis_url: str
 
+    # Beds24 channel manager
+    beds24_refresh_token: str
+    beds24_poll_interval_seconds: int = 60
+
     # IMAP
     imap_host: str
     imap_port: int = 993

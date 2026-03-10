@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from typing import Annotated
 
 from fastapi import Depends
@@ -32,6 +33,14 @@ async def dispose_engine() -> None:
 
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
+    assert _session_factory is not None, "DB engine not initialized"
+    async with _session_factory() as session:
+        yield session
+
+
+@asynccontextmanager
+async def worker_session() -> AsyncGenerator[AsyncSession, None]:
+    """Async context manager for background workers (no FastAPI Depends)."""
     assert _session_factory is not None, "DB engine not initialized"
     async with _session_factory() as session:
         yield session

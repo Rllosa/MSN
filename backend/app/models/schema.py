@@ -38,7 +38,23 @@ class Property(Base):
     )
     name = sa.Column(sa.String(255), nullable=False)
     slug = sa.Column(sa.String(100), nullable=False, unique=True)
+    # Beds24 integer property ID — set via scripts/discover_beds24_properties.py
+    beds24_property_id = sa.Column(sa.Integer, nullable=True, unique=True)
     created_at = sa.Column(
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.text("NOW()"),
+    )
+
+
+class ApiCredential(Base):
+    """Key-value store for rotating API tokens (e.g. Beds24 refresh token)."""
+
+    __tablename__ = "api_credentials"
+
+    key = sa.Column(sa.Text, primary_key=True)
+    value = sa.Column(sa.Text, nullable=False)
+    updated_at = sa.Column(
         sa.DateTime(timezone=True),
         nullable=False,
         server_default=sa.text("NOW()"),

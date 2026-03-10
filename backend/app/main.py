@@ -9,6 +9,7 @@ from app.api.router import router
 from app.api.schemas import HealthResponse
 from app.db.redis import dispose_redis, init_redis
 from app.db.session import dispose_engine, init_engine
+from app.workers.beds24 import start_beds24_worker, stop_beds24_worker
 from app.workers.imap import start_imap_worker, stop_imap_worker
 
 
@@ -17,9 +18,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     init_engine()
     init_redis()
     start_imap_worker()
+    start_beds24_worker()
     # TODO(SOLO-113): Start Redis pub/sub listener for WebSocket push
     yield
     await stop_imap_worker()
+    await stop_beds24_worker()
     await dispose_engine()
     await dispose_redis()
 
