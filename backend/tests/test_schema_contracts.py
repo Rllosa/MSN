@@ -141,7 +141,7 @@ async def test_platform_enum_values(migrated_db: str) -> None:
             ORDER BY e.enumsortorder
             """,
         )
-    assert [r["enumlabel"] for r in rows] == ["airbnb", "booking", "whatsapp"]
+    assert [r["enumlabel"] for r in rows] == ["airbnb", "booking", "whatsapp", "direct"]
 
 
 @pytest.mark.asyncio
