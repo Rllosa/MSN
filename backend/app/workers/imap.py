@@ -8,6 +8,8 @@ from collections.abc import Awaitable, Callable
 import aioimaplib
 
 from app.config import get_settings
+from app.db.ingest import ingest_airbnb_email
+from app.db.session import worker_session
 from app.parsers.airbnb import is_airbnb_email, parse_airbnb_email
 
 logger = logging.getLogger(__name__)
@@ -23,13 +25,8 @@ async def process_email(raw_bytes: bytes) -> None:
     if is_airbnb_email(msg):
         parsed = parse_airbnb_email(raw_bytes)
         if parsed:
-            logger.info(
-                "airbnb.parsed guest=%s property=%s conv_id=%s",
-                parsed.guest_name,
-                parsed.property_name,
-                parsed.platform_conversation_id,
-            )
-        # TODO(SOLO-111): write parsed email to DB
+            async with worker_session() as session:
+                await ingest_airbnb_email(parsed, session)
     else:
         logger.debug(
             "imap.email_skipped message_id=%s from=%s",

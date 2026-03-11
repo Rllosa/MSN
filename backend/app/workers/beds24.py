@@ -1,9 +1,12 @@
 """Beds24 polling worker.
 
-Polls the Beds24 inbox every `beds24_poll_interval_seconds` seconds, logs all
-incoming messages, and rotates the refresh token on every auth call.
+Polls GET /bookings/messages every `beds24_poll_interval_seconds` seconds,
+batch-fetches booking details (for platform/guest attribution), and writes
+guest messages to the DB via the idempotent ingest pipeline (SOLO-111).
 
-DB writes (conversation + message upsert) are implemented in SOLO-111.
+Token rotation: Beds24 only rotates the refresh token occasionally. When
+`authenticate()` returns a new token, it is persisted to `api_credentials`.
+When it returns None the existing token is still valid — no write needed.
 """
 
 from __future__ import annotations
@@ -16,6 +19,7 @@ from sqlalchemy import text
 
 from app.clients.beds24 import Beds24AuthError, Beds24Client
 from app.config import get_settings
+from app.db.ingest import ingest_beds24_message
 from app.db.session import worker_session
 
 logger = logging.getLogger(__name__)
@@ -43,45 +47,71 @@ async def _load_refresh_token() -> str:
 
 
 async def _persist_refresh_token(new_token: str) -> None:
-    """Upsert new refresh token to DB immediately after auth."""
+    """Upsert new refresh token to DB immediately after rotation."""
     async with worker_session() as session:
         await session.execute(
-            text("""
+            text(
+                """
                 INSERT INTO api_credentials (key, value, updated_at)
                 VALUES (:key, :value, NOW())
                 ON CONFLICT (key) DO UPDATE
                 SET value = EXCLUDED.value, updated_at = NOW()
-            """),
+                """
+            ),
             {"key": _CRED_KEY, "value": new_token},
         )
         await session.commit()
 
 
 async def _poll_once(client: Beds24Client, refresh_token: str) -> str:
-    """Authenticate, fetch inbox, log messages. Returns new refresh token.
+    """Authenticate, fetch guest messages, ingest to DB.
 
-    Token is persisted to DB before any subsequent API calls — if the process
-    dies mid-poll the new token is safe.
+    Returns the current refresh token (updated if Beds24 rotated it).
+    The new token is persisted before any subsequent API calls.
     """
     new_token = await client.authenticate(refresh_token)
-    await _persist_refresh_token(new_token)
+    if new_token:
+        # Beds24 rotated the token — persist immediately before next API call
+        await _persist_refresh_token(new_token)
+        refresh_token = new_token
 
-    messages = await client.get_inbox()
-    for msg in messages:
-        logger.info(
-            "beds24.message_received prop_id=%s booking_id=%s msg_id=%s",
-            msg.get("propId"),
-            msg.get("bookId"),
-            msg.get("id"),
-        )
-        # TODO(SOLO-111): upsert conversation + message to DB
+    messages = await client.get_all_guest_messages()
 
-    if messages:
-        logger.info("beds24.poll_complete count=%d", len(messages))
-    else:
+    if not messages:
         logger.debug("beds24.poll_complete count=0")
+        return refresh_token
 
-    return new_token
+    # Batch-fetch booking details for all messages in one API call (Rule 16.2)
+    booking_ids = list({m["bookingId"] for m in messages})
+    bookings = await client.get_bookings(booking_ids)
+    booking_map: dict[int, dict] = {b["id"]: b for b in bookings}
+
+    ingested = 0
+    async with worker_session() as session:
+        for msg in messages:
+            booking = booking_map.get(msg["bookingId"])
+            if not booking:
+                # Pre-booking not yet confirmed — not returned by GET /bookings.
+                # Beds24 POST /bookings/messages works for all bookingIds, so
+                # replies still go through. Default platform to 'booking'.
+                booking = {"id": msg["bookingId"], "firstName": "", "lastName": ""}
+                platform = "booking"
+            else:
+                # Use channel as platform label; fall back to 'direct'.
+                # Beds24 POST /bookings/messages works regardless of channel,
+                # so no messages are skipped.
+                platform = booking.get("channel") or "direct"
+
+            inserted = await ingest_beds24_message(msg, platform, booking, session)
+            if inserted:
+                ingested += 1
+
+    logger.info(
+        "beds24.poll_complete fetched=%d ingested=%d",
+        len(messages),
+        ingested,
+    )
+    return refresh_token
 
 
 async def _run_worker() -> None:
