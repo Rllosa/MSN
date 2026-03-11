@@ -17,7 +17,7 @@ import logging
 import httpx
 from sqlalchemy import text
 
-from app.clients.beds24 import BEDS24_CHANNEL_MAP, Beds24AuthError, Beds24Client
+from app.clients.beds24 import Beds24AuthError, Beds24Client
 from app.config import get_settings
 from app.db.ingest import ingest_beds24_message
 from app.db.session import worker_session
@@ -91,23 +91,16 @@ async def _poll_once(client: Beds24Client, refresh_token: str) -> str:
         for msg in messages:
             booking = booking_map.get(msg["bookingId"])
             if not booking:
-                logger.warning(
-                    "beds24.missing_booking booking_id=%s msg_id=%s",
-                    msg["bookingId"],
-                    msg["id"],
-                )
-                continue
-
-            channel = booking.get("channel", "")
-            platform = BEDS24_CHANNEL_MAP.get(channel)
-            if not platform:
-                # Skip direct / iCal / unknown channels — no guest messaging
-                logger.debug(
-                    "beds24.skipped_channel channel=%r booking_id=%s",
-                    channel,
-                    msg["bookingId"],
-                )
-                continue
+                # Pre-booking not yet confirmed — not returned by GET /bookings.
+                # Beds24 POST /bookings/messages works for all bookingIds, so
+                # replies still go through. Default platform to 'booking'.
+                booking = {"id": msg["bookingId"], "firstName": "", "lastName": ""}
+                platform = "booking"
+            else:
+                # Use channel as platform label; fall back to 'direct'.
+                # Beds24 POST /bookings/messages works regardless of channel,
+                # so no messages are skipped.
+                platform = booking.get("channel") or "direct"
 
             inserted = await ingest_beds24_message(msg, platform, booking, session)
             if inserted:
