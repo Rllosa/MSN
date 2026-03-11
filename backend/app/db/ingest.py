@@ -47,6 +47,12 @@ _SQL_UPSERT_CONVERSATION = text(
     """
 )
 
+_SQL_INCREMENT_UNREAD = text(
+    "UPDATE conversations"
+    " SET unread_count = unread_count + 1, updated_at = NOW()"
+    " WHERE id = :conv_id"
+)
+
 _SQL_INSERT_MESSAGE = text(
     """
     INSERT INTO messages (conversation_id, message_id_hash, direction,
@@ -130,6 +136,9 @@ async def ingest_airbnb_email(
         },
     )
     inserted = msg_result.fetchone() is not None
+
+    if inserted:
+        await session.execute(_SQL_INCREMENT_UNREAD, {"conv_id": conversation_id})
 
     await session.commit()
 
@@ -230,6 +239,9 @@ async def ingest_beds24_message(
         },
     )
     inserted = msg_result.fetchone() is not None
+
+    if inserted:
+        await session.execute(_SQL_INCREMENT_UNREAD, {"conv_id": conversation_id})
 
     await session.commit()
 

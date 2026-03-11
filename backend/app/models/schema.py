@@ -13,6 +13,7 @@ platform_enum = sa.Enum(
     "airbnb",
     "booking",
     "whatsapp",
+    "direct",
     name="platform_enum",
     create_type=False,
 )
@@ -109,6 +110,12 @@ class Conversation(Base):
     )
     # Booking.com extranet URL for reply redirect (v1 reply strategy)
     external_url = sa.Column(sa.Text)
+    # 'active' (default inbox) or 'archived'
+    status = sa.Column(
+        sa.String(20), nullable=False, server_default=sa.text("'active'")
+    )
+    # Incremented on every new inbound message; reset to 0 when user opens conversation
+    unread_count = sa.Column(sa.Integer, nullable=False, server_default=sa.text("0"))
     # Denormalized for fast inbox sort — updated on every message insert
     last_message_at = sa.Column(sa.DateTime(timezone=True))
     created_at = sa.Column(
