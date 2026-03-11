@@ -201,7 +201,7 @@ async def test_airbnb_replay_inserts_once(db_session, property_in_db) -> None:
     r2 = await ingest_airbnb_email(parsed, db_session)
     r3 = await ingest_airbnb_email(parsed, db_session)
 
-    assert r1 is True   # first insert
+    assert r1 is True  # first insert
     assert r2 is False  # duplicate
     assert r3 is False  # duplicate
 

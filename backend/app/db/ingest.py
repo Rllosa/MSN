@@ -83,9 +83,7 @@ async def ingest_airbnb_email(
       3. Message insert via ON CONFLICT (message_id_hash) DO NOTHING.
     """
     # 1. Property lookup
-    row = await session.execute(
-        _SQL_PROPERTY_BY_NAME, {"name": parsed.property_name}
-    )
+    row = await session.execute(_SQL_PROPERTY_BY_NAME, {"name": parsed.property_name})
     prop_row = row.first()
     property_id = str(prop_row[0]) if prop_row else None
 

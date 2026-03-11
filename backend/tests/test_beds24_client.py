@@ -87,10 +87,20 @@ async def test_get_messages_returns_data_and_pagination() -> None:
     """get_messages() returns (messages, has_next) correctly."""
     http = _mock_http()
     msgs = [
-        {"id": 1, "bookingId": 100, "propertyId": 314537, "source": "guest",
-         "message": "Hi"},
-        {"id": 2, "bookingId": 101, "propertyId": 314538, "source": "host",
-         "message": "Hello"},
+        {
+            "id": 1,
+            "bookingId": 100,
+            "propertyId": 314537,
+            "source": "guest",
+            "message": "Hi",
+        },
+        {
+            "id": 2,
+            "bookingId": 101,
+            "propertyId": 314538,
+            "source": "host",
+            "message": "Hello",
+        },
     ]
     http.get.return_value = _resp(
         {

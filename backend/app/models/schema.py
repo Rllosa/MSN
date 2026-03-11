@@ -88,7 +88,8 @@ class Conversation(Base):
     __table_args__ = (
         # Enables ON CONFLICT (platform, guest_contact) DO UPDATE — idempotent upsert
         sa.UniqueConstraint(
-            "platform", "guest_contact",
+            "platform",
+            "guest_contact",
             name="uq_conversations_platform_guest_contact",
         ),
     )
