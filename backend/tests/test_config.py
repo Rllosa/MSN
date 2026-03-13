@@ -59,9 +59,12 @@ def test_defaults(monkeypatch):
     assert s.web_concurrency == 1
 
 
-def test_missing_required_var_raises(monkeypatch):
+def test_missing_required_var_raises(monkeypatch, tmp_path):
     from pydantic import ValidationError
 
+    # tmp_path has no .env file — prevents pydantic-settings from reading
+    # the local backend/.env which would supply the missing key.
+    monkeypatch.chdir(tmp_path)
     for k, v in REQUIRED_ENV.items():
         if k != "JWT_SECRET_KEY":
             monkeypatch.setenv(k, v)
