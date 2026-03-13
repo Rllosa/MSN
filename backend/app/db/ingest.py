@@ -8,6 +8,7 @@ Message insert uses ON CONFLICT (message_id_hash) DO NOTHING for deduplication.
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 from datetime import UTC, datetime
 
@@ -17,6 +18,46 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.parsers.airbnb import AirbnbParsedEmail
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+
+async def _try_publish(
+    conversation_id: str,
+    message_id: str,
+    direction: str,
+    body: str,
+    sent_at: datetime,
+) -> None:
+    """Publish a new_message event to Redis pub/sub.
+
+    Fire-and-forget — never raises. WS push is best-effort; REST polling is
+    the fallback when Redis is unavailable (Rule 1.3).
+    """
+    from app.db.redis import get_redis
+
+    try:
+        payload = json.dumps(
+            {
+                "type": "new_message",
+                "conversation_id": conversation_id,
+                "message": {
+                    "id": message_id,
+                    "direction": direction,
+                    "body": body,
+                    "sent_at": sent_at.isoformat(),
+                },
+            }
+        )
+        await get_redis().publish("msn:new_message", payload)
+    except Exception:
+        logger.warning(
+            "ingest.publish_failed conv_id=%s", conversation_id, exc_info=True
+        )
+
 
 # ---------------------------------------------------------------------------
 # Pre-built SQL (Rule 16.5 — never constructed inside a function)
@@ -116,8 +157,6 @@ async def ingest_airbnb_email(
 
     # 3. Message insert
     message_hash = compute_hash(parsed.message_id_header)
-    import json
-
     raw_headers = json.dumps(
         {
             "Message-ID": parsed.message_id_header,
@@ -135,9 +174,11 @@ async def ingest_airbnb_email(
             "raw_headers": raw_headers,
         },
     )
-    inserted = msg_result.fetchone() is not None
+    row = msg_result.fetchone()
+    inserted = row is not None
 
     if inserted:
+        message_id = str(row[0])
         await session.execute(_SQL_INCREMENT_UNREAD, {"conv_id": conversation_id})
 
     await session.commit()
@@ -147,6 +188,9 @@ async def ingest_airbnb_email(
             "ingest.airbnb.inserted conv_id=%s hash=%s",
             conversation_id,
             message_hash[:12],
+        )
+        await _try_publish(
+            conversation_id, message_id, "inbound", parsed.message_body, sent_at
         )
     else:
         logger.debug(
@@ -218,8 +262,6 @@ async def ingest_beds24_message(
 
     # 3. Message insert — hash of Beds24 message ID (integer, globally unique)
     message_hash = compute_hash(str(msg["id"]))
-    import json
-
     raw_headers = json.dumps(
         {
             "beds24_message_id": msg["id"],
@@ -227,20 +269,23 @@ async def ingest_beds24_message(
             "propertyId": beds24_property_id,
         }
     )
+    body = msg.get("message", "")
     msg_result = await session.execute(
         _SQL_INSERT_MESSAGE,
         {
             "conversation_id": conversation_id,
             "message_id_hash": message_hash,
             "direction": "inbound",
-            "body": msg.get("message", ""),
+            "body": body,
             "sent_at": sent_at,
             "raw_headers": raw_headers,
         },
     )
-    inserted = msg_result.fetchone() is not None
+    row = msg_result.fetchone()
+    inserted = row is not None
 
     if inserted:
+        message_id = str(row[0])
         await session.execute(_SQL_INCREMENT_UNREAD, {"conv_id": conversation_id})
 
     await session.commit()
@@ -252,6 +297,7 @@ async def ingest_beds24_message(
             conversation_id,
             message_hash[:12],
         )
+        await _try_publish(conversation_id, message_id, "inbound", body, sent_at)
     else:
         logger.debug(
             "ingest.beds24.duplicate hash=%s conv_id=%s",
