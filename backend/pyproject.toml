@@ -22,9 +22,14 @@ quote-style = "double"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 # Add backend/ to sys.path so `import app.main` resolves when running from backend/
 pythonpath = ["."]
+filterwarnings = [
+    # python-jose uses datetime.utcnow() internally — third-party, not our code
+    "ignore::DeprecationWarning:jose",
+]
 
 [tool.coverage.run]
 source = ["app"]
