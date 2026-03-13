@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+import jwt
 from fastapi import APIRouter, Cookie, HTTPException, Response, status
-from jose import JWTError
 from sqlalchemy import text
 
 from app.api.schemas import LoginRequest, TokenResponse, UserInfo
@@ -70,7 +70,7 @@ async def refresh(
         )
     try:
         payload = decode_token(refresh_token)
-    except JWTError:
+    except jwt.PyJWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token"
         )
@@ -102,7 +102,7 @@ async def logout(
             ttl = max(int(exp - datetime.now(UTC).timestamp()), 1)
             fp = token_fingerprint(refresh_token)
             await get_redis().setex(f"blocklist:refresh:{fp}", ttl, "1")
-        except JWTError:
+        except jwt.PyJWTError:
             pass  # expired token — no need to blocklist, just clear cookie
     response.delete_cookie(key=_COOKIE, httponly=True, samesite="strict")
 

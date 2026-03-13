@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from typing import Annotated
 
+import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError
 from sqlalchemy import text
 
 from app.auth.tokens import decode_token
@@ -18,7 +18,7 @@ async def get_current_user(
 ) -> dict:
     try:
         payload = decode_token(creds.credentials)
-    except JWTError:
+    except jwt.PyJWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
         )
