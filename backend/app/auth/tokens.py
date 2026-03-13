@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 from datetime import UTC, datetime, timedelta
 
-from jose import jwt
+import jwt
 
 from app.config import get_settings
 

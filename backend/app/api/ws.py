@@ -21,7 +21,7 @@ import logging
 from collections import defaultdict
 
 from fastapi import WebSocket, WebSocketDisconnect
-from jose import JWTError
+import jwt
 
 from app.auth.tokens import decode_token
 
@@ -107,8 +107,8 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     try:
         payload = decode_token(token)
         if payload.get("type") != "access":
-            raise JWTError("not an access token")
-    except JWTError:
+            raise jwt.PyJWTError("not an access token")
+    except jwt.PyJWTError:
         logger.debug("ws.auth_rejected reason=invalid_token")
         await websocket.close(code=4001)
         return
