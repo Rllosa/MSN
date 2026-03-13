@@ -20,8 +20,8 @@ import json
 import logging
 from collections import defaultdict
 
-from fastapi import WebSocket, WebSocketDisconnect
 import jwt
+from fastapi import WebSocket, WebSocketDisconnect
 
 from app.auth.tokens import decode_token
 

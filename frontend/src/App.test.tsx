@@ -25,9 +25,7 @@ describe("App", () => {
     render(<App />);
 
     // After silent refresh fails, login form should appear
-    expect(
-      await screen.findByRole("button", { name: /sign in/i }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /sign in/i })).toBeInTheDocument();
   });
 
   it("shows inbox placeholder when session is restored (silent refresh succeeds)", async () => {
@@ -38,9 +36,7 @@ describe("App", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(
-        screen.getByText("MSN — Unified Messaging Dashboard"),
-      ).toBeInTheDocument();
+      expect(screen.getByText("MSN — Unified Messaging Dashboard")).toBeInTheDocument();
     });
   });
 });

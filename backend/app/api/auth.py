@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Cookie, HTTPException, Response, status
 import jwt
+from fastapi import APIRouter, Cookie, HTTPException, Response, status
 from sqlalchemy import text
 
 from app.api.schemas import LoginRequest, TokenResponse, UserInfo

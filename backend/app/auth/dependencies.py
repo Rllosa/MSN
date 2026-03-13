@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from typing import Annotated
 
+import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-import jwt
 from sqlalchemy import text
 
 from app.auth.tokens import decode_token

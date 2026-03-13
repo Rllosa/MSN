@@ -32,9 +32,9 @@ describe("LoginPage", () => {
     await userEvent.type(screen.getByLabelText("Password"), "wrongpass");
     await userEvent.click(screen.getByRole("button", { name: /sign in/i }));
 
-    expect(
-      await screen.findByRole("alert"),
-    ).toHaveTextContent("Invalid email or password.");
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Invalid email or password.",
+    );
   });
 
   it("shows loading state while submitting", async () => {
