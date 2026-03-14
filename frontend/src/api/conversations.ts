@@ -62,10 +62,7 @@ export async function markConversationRead(id: string): Promise<void> {
   await client.patch(`/conversations/${id}`, { mark_read: true });
 }
 
-export async function postReply(
-  convId: string,
-  content: string,
-): Promise<MessageOut> {
+export async function postReply(convId: string, content: string): Promise<MessageOut> {
   const res = await client.post<MessageOut>(`/conversations/${convId}/reply`, {
     content,
   });

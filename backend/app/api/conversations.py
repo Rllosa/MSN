@@ -410,9 +410,7 @@ async def reply_to_conversation(
     - guest_contact ends with @reply.airbnb.com → SMTP (pre-booking inquiry)
     - guest_contact is numeric                  → Beds24 API (confirmed booking)
     """
-    row = (
-        await session.execute(_SQL_CONV_FOR_REPLY, {"conv_id": conv_id})
-    ).fetchone()
+    row = (await session.execute(_SQL_CONV_FOR_REPLY, {"conv_id": conv_id})).fetchone()
     if not row:
         raise HTTPException(http_status.HTTP_404_NOT_FOUND, "Conversation not found")
 
@@ -489,6 +487,7 @@ async def reply_to_conversation(
 
     # Fire-and-forget WS push
     from app.db.ingest import _try_publish  # noqa: PLC0415
+
     await _try_publish(conv_id, message_id, "outbound", body.content, sent_at)
 
     logger.info(

@@ -39,9 +39,7 @@ export default function ReplyComposer({ conversationId, onSent }: Props) {
 
   return (
     <div className="shrink-0 border-t border-white/10 bg-[#1a1a1a] px-4 py-3">
-      {error && (
-        <p className="text-xs text-red-400 mb-2 px-1">{error}</p>
-      )}
+      {error && <p className="text-xs text-red-400 mb-2 px-1">{error}</p>}
       <div className="flex items-end gap-2">
         <textarea
           ref={textareaRef}
