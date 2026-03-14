@@ -39,6 +39,7 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379/0
+      WEB_CONCURRENCY: 2
     networks:
       - msn
     depends_on:
@@ -47,6 +48,10 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - media_attachments:/app/media/attachments
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
       interval: 15s
@@ -65,7 +70,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     ports:
-      - "80:80"
+      - "3001:80"
 
 networks:
   msn:
@@ -73,3 +78,4 @@ networks:
 
 volumes:
   postgres_data:
+  media_attachments:
