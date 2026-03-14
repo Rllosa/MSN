@@ -19,6 +19,7 @@ import { useInboxSocket } from "../api/socket";
 import FilterDropdown from "../components/FilterDropdown";
 import ConversationList from "../components/ConversationList";
 import MessageThread from "../components/MessageThread";
+import ReplyComposer from "../components/ReplyComposer";
 
 const PAGE_SIZE = 20;
 const POLL_INTERVAL_MS = 30_000;
@@ -367,7 +368,15 @@ export default function InboxPage() {
             Loading…
           </div>
         ) : detail ? (
-          <MessageThread conversation={detail} aptLabel={detailAptLabel} />
+          <>
+            <MessageThread conversation={detail} aptLabel={detailAptLabel} />
+            {detail.platform !== "whatsapp" && (
+              <ReplyComposer
+                conversationId={detail.id}
+                onSent={() => refreshDetail(detail.id)}
+              />
+            )}
+          </>
         ) : (
           <div className="flex flex-col items-center justify-center h-full gap-3 text-zinc-600">
             <svg

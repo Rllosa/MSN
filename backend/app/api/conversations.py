@@ -4,20 +4,30 @@ GET   /conversations              — paginated inbox, filterable
 GET   /conversations/{id}         — conversation detail + last 50 messages
 PATCH /conversations/{id}         — archive/unarchive or mark read
 GET   /conversations/{id}/messages — cursor-based message history
+POST  /conversations/{id}/reply   — send outbound reply (Airbnb only)
 """
 
 from __future__ import annotations
 
-from datetime import datetime
+import hashlib
+import json
+import logging
+from datetime import UTC, datetime
 from typing import Annotated, Literal
 
+import httpx
 from fastapi import APIRouter, HTTPException, Query
 from fastapi import status as http_status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import text
 
 from app.auth.dependencies import CurrentUser
+from app.clients.beds24 import Beds24Client
+from app.clients.smtp import send_smtp_reply
+from app.config import get_settings
 from app.db.session import SessionDep
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
@@ -66,6 +76,10 @@ class MessagesPage(BaseModel):
 class PatchConversationRequest(BaseModel):
     status: Literal["active", "archived"] | None = None
     mark_read: bool | None = None
+
+
+class ReplyRequest(BaseModel):
+    content: str = Field(min_length=1, max_length=4000)
 
 
 # ---------------------------------------------------------------------------
@@ -141,6 +155,30 @@ _SQL_UPDATE_STATUS = text(
 )
 
 _SQL_CONV_EXISTS = text("SELECT id FROM conversations WHERE id = :conv_id")
+
+_SQL_CONV_FOR_REPLY = text(
+    "SELECT platform::text, guest_contact FROM conversations WHERE id = :conv_id"
+)
+
+_SQL_BEDS24_TOKEN = text(
+    "SELECT value FROM api_credentials WHERE key = 'beds24_refresh_token'"
+)
+
+_SQL_INSERT_REPLY = text("""
+    INSERT INTO messages
+        (conversation_id, message_id_hash, direction, body,
+         sent_at, raw_headers, created_at)
+    VALUES
+        (:conv_id, :hash, 'outbound', :body,
+         :sent_at, CAST(:raw_headers AS jsonb), NOW())
+    RETURNING id::text
+""")
+
+_SQL_BUMP_LAST_MESSAGE = text(
+    "UPDATE conversations"
+    " SET last_message_at = :sent_at, updated_at = NOW()"
+    " WHERE id = :conv_id"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -357,3 +395,110 @@ async def list_messages(
     items.reverse()  # chronological order
 
     return MessagesPage(items=items, has_more=has_more)
+
+
+@router.post("/{conv_id}/reply", response_model=MessageOut, status_code=201)
+async def reply_to_conversation(
+    conv_id: str,
+    body: ReplyRequest,
+    _: CurrentUser,
+    session: SessionDep,
+) -> MessageOut:
+    """Send an outbound reply to an Airbnb conversation.
+
+    Routing:
+    - guest_contact ends with @reply.airbnb.com → SMTP (pre-booking inquiry)
+    - guest_contact is numeric                  → Beds24 API (confirmed booking)
+    """
+    row = (
+        await session.execute(_SQL_CONV_FOR_REPLY, {"conv_id": conv_id})
+    ).fetchone()
+    if not row:
+        raise HTTPException(http_status.HTTP_404_NOT_FOUND, "Conversation not found")
+
+    platform: str = row.platform
+    guest_contact: str | None = row.guest_contact
+
+    if platform not in ("airbnb", "booking", "direct"):
+        raise HTTPException(
+            http_status.HTTP_405_METHOD_NOT_ALLOWED,
+            f"Reply not supported for platform '{platform}' via this endpoint",
+        )
+
+    # --- Send via appropriate path (raises on failure; no DB write on error) ---
+
+    if guest_contact and guest_contact.endswith("@reply.airbnb.com"):
+        # Pre-booking inquiry: SMTP → Airbnb reply gateway
+        try:
+            await send_smtp_reply(guest_contact, body.content)
+        except Exception as exc:
+            logger.exception("reply.smtp_failed conv_id=%s err=%s", conv_id, exc)
+            raise HTTPException(
+                http_status.HTTP_502_BAD_GATEWAY, "Failed to send email reply"
+            ) from exc
+
+    elif guest_contact and guest_contact.isdigit():
+        # Confirmed booking: Beds24 API
+        booking_id = int(guest_contact)
+        s = get_settings()
+        token_row = (await session.execute(_SQL_BEDS24_TOKEN)).fetchone()
+        refresh_token = str(token_row[0]) if token_row else s.beds24_refresh_token
+        try:
+            async with httpx.AsyncClient(timeout=30) as http:
+                client = Beds24Client(http)
+                await client.authenticate(refresh_token)
+                await client.post_message(booking_id, body.content)
+        except Exception as exc:
+            logger.exception("reply.beds24_failed conv_id=%s err=%s", conv_id, exc)
+            raise HTTPException(
+                http_status.HTTP_502_BAD_GATEWAY, "Failed to send Beds24 reply"
+            ) from exc
+
+    else:
+        raise HTTPException(
+            http_status.HTTP_405_METHOD_NOT_ALLOWED,
+            "Cannot determine reply path for this conversation",
+        )
+
+    # --- Persist outbound message row ---
+    sent_at = datetime.now(UTC)
+    msg_hash = hashlib.sha256(
+        f"reply:{conv_id}:{sent_at.isoformat()}".encode()
+    ).hexdigest()
+    is_smtp = "@reply" in (guest_contact or "")
+    raw_headers = json.dumps({"reply_path": "smtp" if is_smtp else "beds24"})
+
+    msg_row = (
+        await session.execute(
+            _SQL_INSERT_REPLY,
+            {
+                "conv_id": conv_id,
+                "hash": msg_hash,
+                "body": body.content,
+                "sent_at": sent_at,
+                "raw_headers": raw_headers,
+            },
+        )
+    ).fetchone()
+    await session.execute(
+        _SQL_BUMP_LAST_MESSAGE, {"conv_id": conv_id, "sent_at": sent_at}
+    )
+    await session.commit()
+
+    message_id = str(msg_row[0])  # type: ignore[index]
+
+    # Fire-and-forget WS push
+    from app.db.ingest import _try_publish  # noqa: PLC0415
+    await _try_publish(conv_id, message_id, "outbound", body.content, sent_at)
+
+    logger.info(
+        "reply.sent conv_id=%s path=%s", conv_id, "smtp" if is_smtp else "beds24"
+    )
+
+    return MessageOut(
+        id=message_id,
+        direction="outbound",
+        body=body.content,
+        sent_at=sent_at,
+        created_at=sent_at,
+    )

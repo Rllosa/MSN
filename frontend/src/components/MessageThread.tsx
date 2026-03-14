@@ -93,7 +93,7 @@ export default function MessageThread({ conversation, aptLabel }: Props) {
   }, [conversation.id, conversation.messages.length]);
 
   return (
-    <div className="flex flex-col h-full bg-[#0f0f0f]">
+    <div className="flex flex-col flex-1 min-h-0 bg-[#0f0f0f]">
       {/* Header */}
       <div className="px-6 py-4 bg-[#1a1a1a] border-b border-white/10 shrink-0">
         <div className="flex items-center gap-3">
