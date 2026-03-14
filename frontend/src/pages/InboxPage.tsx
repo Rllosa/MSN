@@ -23,6 +23,16 @@ import MessageThread from "../components/MessageThread";
 const PAGE_SIZE = 20;
 const POLL_INTERVAL_MS = 30_000;
 
+const APT_LABELS: Record<number, string> = {
+  314537: "apt1",
+  314539: "apt2",
+  314538: "apt3",
+  314541: "apt4",
+  314540: "apt5",
+  314542: "apt6",
+  314543: "apt7",
+};
+
 const PLATFORM_ITEMS = [
   { value: "airbnb", label: "Airbnb" },
   { value: "booking", label: "Booking.com" },
@@ -213,7 +223,12 @@ export default function InboxPage() {
   };
 
   const propertyItems = useMemo(
-    () => properties.map((p) => ({ value: p.id, label: p.name })),
+    () =>
+      properties.map((p) => {
+        const apt =
+          p.beds24_property_id != null ? APT_LABELS[p.beds24_property_id] : null;
+        return { value: p.id, label: apt ? `${p.name} (${apt})` : p.name };
+      }),
     [properties],
   );
 

@@ -23,7 +23,7 @@ async def list_properties(_: CurrentUser, session: SessionDep) -> list[PropertyI
     rows = (
         await session.execute(
             text(
-                "SELECT id::text, name, slug, created_at"
+                "SELECT id::text, name, slug, beds24_property_id, created_at"
                 " FROM properties"
                 " WHERE is_active = TRUE"
                 " ORDER BY name ASC"
@@ -35,6 +35,7 @@ async def list_properties(_: CurrentUser, session: SessionDep) -> list[PropertyI
             id=row.id,
             name=row.name,
             slug=row.slug,
+            beds24_property_id=row.beds24_property_id,
             created_at=row.created_at,
         )
         for row in rows
@@ -68,6 +69,7 @@ async def create_property(
         id=row.id,
         name=row.name,
         slug=row.slug,
+        beds24_property_id=getattr(row, "beds24_property_id", None),
         created_at=row.created_at,
     )
 
@@ -137,6 +139,7 @@ async def patch_property(
         id=row.id,
         name=row.name,
         slug=row.slug,
+        beds24_property_id=getattr(row, "beds24_property_id", None),
         created_at=row.created_at,
     )
 
