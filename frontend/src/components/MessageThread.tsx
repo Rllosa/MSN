@@ -4,6 +4,7 @@ import PlatformBadge from "./PlatformBadge";
 
 interface Props {
   conversation: ConversationDetail;
+  aptLabel?: string;
 }
 
 function formatTime(iso: string): string {
@@ -84,7 +85,7 @@ function ImageAttachment({ src }: { src: string }) {
   );
 }
 
-export default function MessageThread({ conversation }: Props) {
+export default function MessageThread({ conversation, aptLabel }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -105,6 +106,11 @@ export default function MessageThread({ conversation }: Props) {
                 {conversation.guest_name}
               </h2>
               <PlatformBadge platform={conversation.platform} />
+              {conversation.guest_contact?.endsWith("@reply.airbnb.com") && (
+                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400">
+                  Inquiry
+                </span>
+              )}
               {conversation.guest_contact && (
                 <span className="text-[10px] text-zinc-500 font-mono">
                   {conversation.guest_contact}
@@ -114,6 +120,9 @@ export default function MessageThread({ conversation }: Props) {
             {conversation.property_name && (
               <p className="text-xs text-zinc-500 truncate">
                 {conversation.property_name}
+                {aptLabel && (
+                  <span className="text-zinc-600 ml-1">({aptLabel})</span>
+                )}
               </p>
             )}
           </div>

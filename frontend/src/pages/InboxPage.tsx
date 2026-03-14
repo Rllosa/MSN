@@ -222,15 +222,26 @@ export default function InboxPage() {
     });
   };
 
-  const propertyItems = useMemo(
-    () =>
-      properties.map((p) => {
-        const apt =
-          p.beds24_property_id != null ? APT_LABELS[p.beds24_property_id] : null;
-        return { value: p.id, label: apt ? `${p.name} (${apt})` : p.name };
-      }),
-    [properties],
-  );
+  const propertyItems = useMemo(() => {
+    const items = properties.map((p) => {
+      const apt =
+        p.beds24_property_id != null ? APT_LABELS[p.beds24_property_id] : null;
+      return { value: p.id, label: apt ? `${p.name} (${apt})` : p.name, apt };
+    });
+    items.sort((a, b) => {
+      const numA = a.apt ? parseInt(a.apt.replace("apt", ""), 10) : Infinity;
+      const numB = b.apt ? parseInt(b.apt.replace("apt", ""), 10) : Infinity;
+      return numA - numB;
+    });
+    return items;
+  }, [properties]);
+
+  const detailAptLabel = useMemo(() => {
+    if (!detail?.property_id) return undefined;
+    const prop = properties.find((p) => p.id === detail.property_id);
+    if (!prop || prop.beds24_property_id == null) return undefined;
+    return APT_LABELS[prop.beds24_property_id];
+  }, [detail?.property_id, properties]);
 
   const hasMore = conversations.length < total;
 
@@ -356,7 +367,7 @@ export default function InboxPage() {
             Loading…
           </div>
         ) : detail ? (
-          <MessageThread conversation={detail} />
+          <MessageThread conversation={detail} aptLabel={detailAptLabel} />
         ) : (
           <div className="flex flex-col items-center justify-center h-full gap-3 text-zinc-600">
             <svg
