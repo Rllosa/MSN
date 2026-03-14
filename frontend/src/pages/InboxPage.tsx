@@ -1,5 +1,12 @@
-import { useCallback, useEffect, useRef, useState, useDeferredValue } from "react";
-import { useParams } from "react-router-dom";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useDeferredValue,
+} from "react";
+import { useParams, useSearchParams } from "react-router-dom";
 import {
   ConversationDetail,
   ConversationSummary,
@@ -7,17 +14,41 @@ import {
   getConversations,
   markConversationRead,
 } from "../api/conversations";
+import { getProperties, Property } from "../api/properties";
 import { useInboxSocket } from "../api/socket";
+import FilterDropdown from "../components/FilterDropdown";
 import ConversationList from "../components/ConversationList";
 import MessageThread from "../components/MessageThread";
 
 const PAGE_SIZE = 20;
 const POLL_INTERVAL_MS = 30_000;
 
+const PLATFORM_ITEMS = [
+  { value: "airbnb", label: "Airbnb" },
+  { value: "booking", label: "Booking.com" },
+  { value: "whatsapp", label: "WhatsApp" },
+];
+
 export default function InboxPage() {
   const { conversationId } = useParams<{ conversationId?: string }>();
   const conversationIdRef = useRef(conversationId);
   conversationIdRef.current = conversationId;
+
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // URL-persisted filter params (strings used as effect deps to avoid
+  // array identity churn on every render)
+  const platformParam = searchParams.get("platform") ?? "";
+  const propertyParam = searchParams.get("property") ?? "";
+
+  const selectedPlatforms = useMemo(
+    () => platformParam.split(",").filter(Boolean),
+    [platformParam],
+  );
+  const selectedPropertyIds = useMemo(
+    () => propertyParam.split(",").filter(Boolean),
+    [propertyParam],
+  );
 
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [total, setTotal] = useState(0);
@@ -26,19 +57,20 @@ export default function InboxPage() {
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [searchInput, setSearchInput] = useState("");
   const search = useDeferredValue(searchInput);
-  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
-  const [platformMenuOpen, setPlatformMenuOpen] = useState(false);
-  const platformMenuRef = useRef<HTMLDivElement>(null);
 
+  const [properties, setProperties] = useState<Property[]>([]);
   const [detail, setDetail] = useState<ConversationDetail | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
 
+  // Refs for stale-closure-safe reads inside fetchList
   const unreadOnlyRef = useRef(unreadOnly);
   unreadOnlyRef.current = unreadOnly;
   const searchRef = useRef(search);
   searchRef.current = search;
   const selectedPlatformsRef = useRef(selectedPlatforms);
   selectedPlatformsRef.current = selectedPlatforms;
+  const selectedPropertyIdsRef = useRef(selectedPropertyIds);
+  selectedPropertyIdsRef.current = selectedPropertyIds;
 
   // Refresh the conversation list (replace = reset to page 1)
   const fetchList = useCallback(
@@ -50,6 +82,7 @@ export default function InboxPage() {
         unreadOnlyRef.current,
         searchRef.current,
         selectedPlatformsRef.current,
+        selectedPropertyIdsRef.current,
       );
       setTotal(page.total);
       if (replace) {
@@ -79,10 +112,13 @@ export default function InboxPage() {
     }
   });
 
-  // Initial load + window.focus refresh + 30s fallback polling
+  // Initial load + fetch properties + window.focus refresh + 30s fallback polling
   useEffect(() => {
     setLoadingList(true);
     fetchList(true).finally(() => setLoadingList(false));
+    getProperties()
+      .then(setProperties)
+      .catch(() => {});
 
     const onFocus = () => fetchList(true).catch(() => {});
     window.addEventListener("focus", onFocus);
@@ -104,7 +140,7 @@ export default function InboxPage() {
     setLoadingList(true);
     fetchList(true).finally(() => setLoadingList(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [unreadOnly, search, selectedPlatforms]);
+  }, [unreadOnly, search, platformParam, propertyParam]);
 
   const handleLoadMore = async () => {
     setLoadingMore(true);
@@ -136,20 +172,50 @@ export default function InboxPage() {
       .finally(() => setLoadingDetail(false));
   }, [conversationId]);
 
-  // Close platform menu on outside click
-  useEffect(() => {
-    if (!platformMenuOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (
-        platformMenuRef.current &&
-        !platformMenuRef.current.contains(e.target as Node)
-      ) {
-        setPlatformMenuOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [platformMenuOpen]);
+  const togglePlatform = (p: string) => {
+    const next = selectedPlatforms.includes(p)
+      ? selectedPlatforms.filter((x) => x !== p)
+      : [...selectedPlatforms, p];
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      if (next.length > 0) params.set("platform", next.join(","));
+      else params.delete("platform");
+      return params;
+    });
+  };
+
+  const clearPlatforms = () => {
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      params.delete("platform");
+      return params;
+    });
+  };
+
+  const toggleProperty = (id: string) => {
+    const next = selectedPropertyIds.includes(id)
+      ? selectedPropertyIds.filter((x) => x !== id)
+      : [...selectedPropertyIds, id];
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      if (next.length > 0) params.set("property", next.join(","));
+      else params.delete("property");
+      return params;
+    });
+  };
+
+  const clearProperties = () => {
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      params.delete("property");
+      return params;
+    });
+  };
+
+  const propertyItems = useMemo(
+    () => properties.map((p) => ({ value: p.id, label: p.name })),
+    [properties],
+  );
 
   const hasMore = conversations.length < total;
 
@@ -205,95 +271,23 @@ export default function InboxPage() {
               Unread only
             </button>
 
-            <div className="relative" ref={platformMenuRef}>
-              <button
-                onClick={() => setPlatformMenuOpen((v) => !v)}
-                className={`text-xs font-medium px-3 py-1 rounded-full transition-colors flex items-center gap-1 ${
-                  selectedPlatforms.length > 0
-                    ? "bg-blue-600 text-white"
-                    : "bg-zinc-800 text-zinc-400 hover:text-zinc-200"
-                }`}
-              >
-                Platform
-                {selectedPlatforms.length > 0 && (
-                  <span className="bg-white/20 rounded-full px-1.5">
-                    {selectedPlatforms.length}
-                  </span>
-                )}
-                <svg
-                  className="w-3 h-3"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M19 9l-7 7-7-7"
-                  />
-                </svg>
-              </button>
+            <FilterDropdown
+              label="Platform"
+              items={PLATFORM_ITEMS}
+              selected={selectedPlatforms}
+              onToggle={togglePlatform}
+              onClear={clearPlatforms}
+            />
 
-              {platformMenuOpen && (
-                <div className="absolute left-0 top-full mt-1 bg-zinc-900 border border-white/10 rounded-lg shadow-xl z-10 py-1 min-w-[140px]">
-                  {(["airbnb", "booking", "whatsapp"] as const).map((p) => {
-                    const labels: Record<string, string> = {
-                      airbnb: "Airbnb",
-                      booking: "Booking.com",
-                      whatsapp: "WhatsApp",
-                    };
-                    const checked = selectedPlatforms.includes(p);
-                    return (
-                      <button
-                        key={p}
-                        onClick={() =>
-                          setSelectedPlatforms((prev) =>
-                            checked ? prev.filter((x) => x !== p) : [...prev, p],
-                          )
-                        }
-                        className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-zinc-300 hover:bg-white/5 transition-colors"
-                      >
-                        <span
-                          className={`w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0 ${checked ? "bg-blue-600 border-blue-600" : "border-zinc-600"}`}
-                        >
-                          {checked && (
-                            <svg
-                              className="w-2.5 h-2.5 text-white"
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={3}
-                                d="M5 13l4 4L19 7"
-                              />
-                            </svg>
-                          )}
-                        </span>
-                        {labels[p]}
-                      </button>
-                    );
-                  })}
-                  {selectedPlatforms.length > 0 && (
-                    <>
-                      <div className="border-t border-white/10 my-1" />
-                      <button
-                        onClick={() => {
-                          setSelectedPlatforms([]);
-                          setPlatformMenuOpen(false);
-                        }}
-                        className="w-full px-3 py-1.5 text-xs text-zinc-500 hover:text-zinc-300 transition-colors text-left"
-                      >
-                        Clear
-                      </button>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
+            {propertyItems.length > 0 && (
+              <FilterDropdown
+                label="Property"
+                items={propertyItems}
+                selected={selectedPropertyIds}
+                onToggle={toggleProperty}
+                onClear={clearProperties}
+              />
+            )}
           </div>
         </div>
 
