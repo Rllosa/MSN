@@ -260,9 +260,7 @@ async def ingest_airbnb_email(
             conversation_id = str(existing_row[0])
         else:
             # No matching conversation yet — drop the message silently.
-            logger.debug(
-                "ingest.airbnb.outbound_no_conv reply_to=%s", parsed.reply_to
-            )
+            logger.debug("ingest.airbnb.outbound_no_conv reply_to=%s", parsed.reply_to)
             return False
     else:
         # Inbound guest inquiry — merge by guest name if we already have one.

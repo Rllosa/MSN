@@ -285,7 +285,8 @@ def _extract_message_body(soup: BeautifulSoup) -> str:
     paragraphs = [p.get_text(separator=" ", strip=True) for p in soup.find_all("p")]
     # Drop role labels and bare punctuation-only paragraphs
     filtered = [
-        p for p in paragraphs
+        p
+        for p in paragraphs
         if p and not _RE_ROLE_LABEL.match(p) and not re.fullmatch(r"[.\-–—\s]+", p)
     ]
     raw = "\n\n".join(filtered)

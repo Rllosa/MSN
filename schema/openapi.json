@@ -808,6 +808,64 @@
         }
       }
     },
+    "/api/conversations/{conv_id}/reply": {
+      "post": {
+        "tags": [
+          "conversations"
+        ],
+        "summary": "Reply To Conversation",
+        "description": "Send an outbound reply to an Airbnb conversation.\n\nRouting:\n- guest_contact ends with @reply.airbnb.com \u2192 SMTP (pre-booking inquiry)\n- guest_contact is numeric                  \u2192 Beds24 API (confirmed booking)",
+        "operationId": "reply_to_conversation_api_conversations__conv_id__reply_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "conv_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Conv Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "summary": "Health",
@@ -1271,6 +1329,17 @@
             "type": "string",
             "title": "Slug"
           },
+          "beds24_property_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Beds24 Property Id"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -1282,9 +1351,25 @@
           "id",
           "name",
           "slug",
+          "beds24_property_id",
           "created_at"
         ],
         "title": "PropertyInfo"
+      },
+      "ReplyRequest": {
+        "properties": {
+          "content": {
+            "type": "string",
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Content"
+          }
+        },
+        "type": "object",
+        "required": [
+          "content"
+        ],
+        "title": "ReplyRequest"
       },
       "TokenResponse": {
         "properties": {

@@ -5,6 +5,7 @@ any Airbnb inquiry emails into the DB (idempotent — deduplication via message 
 Usage (from backend/):
     python scripts/backfill_imap.py [--days 14]
 """
+
 from __future__ import annotations
 
 import argparse

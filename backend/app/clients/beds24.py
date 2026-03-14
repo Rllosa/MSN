@@ -147,6 +147,26 @@ class Beds24Client:
         return body.get("data", []) if isinstance(body, dict) else body
 
     # ------------------------------------------------------------------
+    # Replies
+    # ------------------------------------------------------------------
+
+    async def post_message(self, booking_id: int, message: str) -> None:
+        """Send a reply to a guest via Beds24 POST /bookings/messages."""
+        resp = await self._http.post(
+            f"{BEDS24_BASE}/bookings/messages",
+            headers=self._auth_headers(),
+            json=[{"bookingId": booking_id, "message": message}],
+        )
+        if not resp.is_success:
+            logger.error(
+                "beds24.post_message_failed booking_id=%s status=%s body=%s",
+                booking_id,
+                resp.status_code,
+                resp.text,
+            )
+        resp.raise_for_status()
+
+    # ------------------------------------------------------------------
     # Internal
     # ------------------------------------------------------------------
 

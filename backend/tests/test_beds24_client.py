@@ -206,3 +206,26 @@ async def test_get_properties_returns_property_list() -> None:
 
     assert result == props
     assert "properties" in http.get.call_args.args[0]
+
+
+# ---------------------------------------------------------------------------
+# post_message()
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_post_message_sends_array_body() -> None:
+    """post_message() POSTs a JSON array with bookingId and message."""
+    http = _mock_http()
+    http.post.return_value = _resp({"success": True}, status_code=200)
+    client = Beds24Client(http)
+    client._access_token = "access-abc"
+
+    await client.post_message(12345, "Hello guest!")
+
+    call_kwargs = http.post.call_args
+    assert "bookings/messages" in call_kwargs.args[0]
+    body = call_kwargs.kwargs["json"]
+    assert isinstance(body, list), "Beds24 requires an array body"
+    assert body[0]["bookingId"] == 12345
+    assert body[0]["message"] == "Hello guest!"
