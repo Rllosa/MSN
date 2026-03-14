@@ -120,9 +120,7 @@ export default function MessageThread({ conversation, aptLabel }: Props) {
             {conversation.property_name && (
               <p className="text-xs text-zinc-500 truncate">
                 {conversation.property_name}
-                {aptLabel && (
-                  <span className="text-zinc-600 ml-1">({aptLabel})</span>
-                )}
+                {aptLabel && <span className="text-zinc-600 ml-1">({aptLabel})</span>}
               </p>
             )}
           </div>
