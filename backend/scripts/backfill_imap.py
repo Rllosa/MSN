@@ -14,7 +14,7 @@ import imaplib
 import logging
 import sys
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 sys.path.insert(0, ".")
 
@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 async def backfill_async(days: int) -> None:
     init_engine()
     s = get_settings()
-    since_date = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%d-%b-%Y")
+    since_date = (datetime.now(UTC) - timedelta(days=days)).strftime("%d-%b-%Y")
 
     logger.info("Connecting to %s:%d as %s", s.imap_host, s.imap_port, s.imap_user)
     mail = imaplib.IMAP4_SSL(s.imap_host, s.imap_port)
@@ -39,7 +39,11 @@ async def backfill_async(days: int) -> None:
 
     _, data = mail.search(None, f"SINCE {since_date}")
     uids = data[0].split() if data[0] else []
-    logger.info("Found %d emails since %s — scanning for Airbnb inquiries…", len(uids), since_date)
+    logger.info(
+        "Found %d emails since %s — scanning for Airbnb inquiries…",
+        len(uids),
+        since_date,
+    )
 
     found = ingested = skipped = errors = 0
 
