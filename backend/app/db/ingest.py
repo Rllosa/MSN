@@ -396,6 +396,11 @@ async def ingest_beds24_message(
     )
     conversation_id = str(conv_result.scalar_one())
 
+    # Skip host messages — already stored by the reply endpoint with its own hash.
+    # Ingesting them again would create a duplicate row (different hash, same content).
+    if msg.get("source") == "host":
+        return False
+
     # 3. Message insert — hash of Beds24 message ID (integer, globally unique)
     message_hash = compute_hash(str(msg["id"]))
     raw_headers = json.dumps(
@@ -406,13 +411,12 @@ async def ingest_beds24_message(
         }
     )
     body = await _cache_images(msg.get("message", ""))
-    direction = "outbound" if msg.get("source") == "host" else "inbound"
     msg_result = await session.execute(
         _SQL_INSERT_MESSAGE,
         {
             "conversation_id": conversation_id,
             "message_id_hash": message_hash,
-            "direction": direction,
+            "direction": "inbound",
             "body": body,
             "sent_at": sent_at,
             "raw_headers": raw_headers,
@@ -424,8 +428,7 @@ async def ingest_beds24_message(
 
     if inserted:
         message_id = str(row[0])
-        if direction == "inbound":
-            await session.execute(_SQL_INCREMENT_UNREAD, {"conv_id": conversation_id})
+        await session.execute(_SQL_INCREMENT_UNREAD, {"conv_id": conversation_id})
 
     await session.commit()
 
@@ -436,7 +439,7 @@ async def ingest_beds24_message(
             conversation_id,
             message_hash[:12],
         )
-        await _try_publish(conversation_id, message_id, direction, body, sent_at)
+        await _try_publish(conversation_id, message_id, "inbound", body, sent_at)
     else:
         logger.debug(
             "ingest.beds24.duplicate hash=%s conv_id=%s",
