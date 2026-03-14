@@ -90,8 +90,7 @@ _CONV_SELECT = """\
 
 # Fixed ORDER + pagination used in the list query
 _CONV_ORDER = (
-    " ORDER BY c.last_message_at DESC NULLS LAST"
-    " LIMIT :limit OFFSET :offset"
+    " ORDER BY c.last_message_at DESC NULLS LAST" " LIMIT :limit OFFSET :offset"
 )
 
 _SQL_CONV_BY_ID = text(
@@ -102,7 +101,9 @@ _SQL_LAST_MESSAGES = text("""
     SELECT id::text, direction::text, body, sent_at, created_at
     FROM messages
     WHERE conversation_id = :conv_id
-    ORDER BY sent_at ASC, (raw_headers->>'beds24_message_id')::bigint DESC NULLS LAST, created_at ASC
+    ORDER BY sent_at ASC,
+             (raw_headers->>'beds24_message_id')::bigint DESC NULLS LAST,
+             created_at ASC
     LIMIT 50
 """)
 
@@ -111,7 +112,9 @@ _SQL_MESSAGES_WITH_CURSOR = text("""
     FROM messages
     WHERE conversation_id = :conv_id
       AND sent_at < :before
-    ORDER BY sent_at DESC, (raw_headers->>'beds24_message_id')::bigint ASC NULLS LAST, created_at DESC
+    ORDER BY sent_at DESC,
+             (raw_headers->>'beds24_message_id')::bigint ASC NULLS LAST,
+             created_at DESC
     LIMIT 51
 """)
 
@@ -119,7 +122,9 @@ _SQL_MESSAGES_NO_CURSOR = text("""
     SELECT id::text, direction::text, body, sent_at, created_at
     FROM messages
     WHERE conversation_id = :conv_id
-    ORDER BY sent_at DESC, (raw_headers->>'beds24_message_id')::bigint ASC NULLS LAST, created_at DESC
+    ORDER BY sent_at DESC,
+             (raw_headers->>'beds24_message_id')::bigint ASC NULLS LAST,
+             created_at DESC
     LIMIT 51
 """)
 
@@ -239,16 +244,16 @@ async def list_conversations(
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> ConversationsPage:
     platforms = (
-        [p.strip() for p in platform.split(",") if p.strip()]
-        if platform
-        else None
+        [p.strip() for p in platform.split(",") if p.strip()] if platform else None
     )
     property_ids = (
         [p.strip() for p in property_id.split(",") if p.strip()]
         if property_id
         else None
     )
-    where, params = _build_where(platforms, property_ids, conv_status, search, unread_only)
+    where, params = _build_where(
+        platforms, property_ids, conv_status, search, unread_only
+    )
 
     total: int = (
         await session.execute(

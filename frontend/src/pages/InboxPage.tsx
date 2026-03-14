@@ -51,7 +51,6 @@ export default function InboxPage() {
       } else {
         setConversations((prev) => [...prev, ...page.items]);
       }
-      // eslint-disable-next-line react-hooks/exhaustive-deps
     },
     [conversations.length],
   );

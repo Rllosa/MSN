@@ -1,7 +1,8 @@
 """Message ingestion — idempotent upsert pipeline for all platforms.
 
 All SQL strings are pre-built at module scope (Rule 16.5).
-Conversation upsert uses ON CONFLICT (guest_contact) WHERE guest_contact IS NOT NULL DO UPDATE.
+Conversation upsert uses ON CONFLICT (guest_contact)
+WHERE guest_contact IS NOT NULL DO UPDATE.
 Message insert uses ON CONFLICT (message_id_hash) DO NOTHING for deduplication.
 """
 
@@ -29,7 +30,7 @@ _IMG_TAG_RE = re.compile(r'<img[^>]+src="([^"]+)"', re.IGNORECASE)
 
 
 async def _cache_images(body: str) -> str:
-    """Download any <img src="..."> URLs in body, save locally, return body with local URLs."""
+    """Download <img src> URLs in body, save locally, return body with local URLs."""
     matches = list(_IMG_TAG_RE.finditer(body))
     if not matches:
         return body
@@ -49,9 +50,13 @@ async def _cache_images(body: str) -> str:
                     resp = await http.get(url)
                     resp.raise_for_status()
                     local_path.write_bytes(resp.content)
-                    logger.debug("ingest.cached_image %s → %s", url[:60], local_path.name)
+                    logger.debug(
+                        "ingest.cached_image %s → %s", url[:60], local_path.name
+                    )
                 except Exception as exc:
-                    logger.warning("ingest.image_download_failed url=%s err=%s", url[:80], exc)
+                    logger.warning(
+                        "ingest.image_download_failed url=%s err=%s", url[:80], exc
+                    )
                     continue
             body = body.replace(url, f"/media/attachments/{local_path.name}")
 
