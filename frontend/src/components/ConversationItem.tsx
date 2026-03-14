@@ -8,18 +8,28 @@ interface Props {
   onClick: () => void;
 }
 
-function formatLabel(iso: string | null): { primary: string; secondary: string | null } {
+function formatLabel(iso: string | null): {
+  primary: string;
+  secondary: string | null;
+} {
   if (!iso) return { primary: "", secondary: null };
   const d = new Date(iso);
   const now = new Date();
 
   const isToday = d.toDateString() === now.toDateString();
-  const isWithin3Days = (now.getTime() - d.getTime()) < 3 * 24 * 60 * 60 * 1000;
+  const isWithin3Days = now.getTime() - d.getTime() < 3 * 24 * 60 * 60 * 1000;
   const timeStr = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
   if (isToday) return { primary: timeStr, secondary: null };
-  if (isWithin3Days) return { primary: d.toLocaleDateString([], { weekday: "short" }), secondary: timeStr };
-  return { primary: d.toLocaleDateString([], { month: "short", day: "numeric" }), secondary: timeStr };
+  if (isWithin3Days)
+    return {
+      primary: d.toLocaleDateString([], { weekday: "short" }),
+      secondary: timeStr,
+    };
+  return {
+    primary: d.toLocaleDateString([], { month: "short", day: "numeric" }),
+    secondary: timeStr,
+  };
 }
 
 export default function ConversationItem({ conv, selected, onClick }: Props) {
@@ -58,7 +68,9 @@ export default function ConversationItem({ conv, selected, onClick }: Props) {
             return (
               <div className="flex flex-col items-end leading-tight">
                 <span className="text-[11px] text-zinc-400">{primary}</span>
-                {secondary && <span className="text-[11px] text-zinc-600">{secondary}</span>}
+                {secondary && (
+                  <span className="text-[11px] text-zinc-600">{secondary}</span>
+                )}
               </div>
             );
           })()}

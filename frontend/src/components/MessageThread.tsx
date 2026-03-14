@@ -53,9 +53,18 @@ function ImageAttachment({ src }: { src: string }) {
   if (errored) {
     return (
       <div className="flex items-center gap-2 rounded-lg px-3 py-2 mb-1 bg-white/5 text-zinc-500 text-xs">
-        <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-            d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14M14 8h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+        <svg
+          className="w-4 h-4 shrink-0"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={1.5}
+            d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14M14 8h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+          />
         </svg>
         Image expired
       </div>
@@ -81,7 +90,6 @@ export default function MessageThread({ conversation }: Props) {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [conversation.id, conversation.messages.length]);
-
 
   return (
     <div className="flex flex-col h-full bg-[#0f0f0f]">
@@ -152,9 +160,7 @@ export default function MessageThread({ conversation }: Props) {
                       {images.map((src, idx) => (
                         <ImageAttachment key={idx} src={src} />
                       ))}
-                      {text && (
-                        <p className="whitespace-pre-wrap break-all">{text}</p>
-                      )}
+                      {text && <p className="whitespace-pre-wrap break-all">{text}</p>}
                     </div>
                     <span className="text-[10px] mt-1 text-zinc-600">
                       {formatTime(msg.sent_at)}

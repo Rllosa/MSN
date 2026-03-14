@@ -521,12 +521,6 @@
             "schema": {
               "anyOf": [
                 {
-                  "enum": [
-                    "airbnb",
-                    "booking",
-                    "whatsapp",
-                    "direct"
-                  ],
                   "type": "string"
                 },
                 {
@@ -588,6 +582,16 @@
                 }
               ],
               "title": "Search"
+            }
+          },
+          {
+            "name": "unread_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Unread Only"
             }
           },
           {
