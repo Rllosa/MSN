@@ -64,11 +64,14 @@ async def whatsapp_inbound(
 
     # Constant-time HMAC validation — reject unsigned/tampered requests
     sig_header = request.headers.get("X-Hub-Signature-256", "")
-    expected = "sha256=" + hmac.new(
-        get_settings().whatsapp_app_secret.encode(),
-        raw_body,
-        hashlib.sha256,
-    ).hexdigest()
+    expected = (
+        "sha256="
+        + hmac.new(
+            get_settings().whatsapp_app_secret.encode(),
+            raw_body,
+            hashlib.sha256,
+        ).hexdigest()
+    )
     if not hmac.compare_digest(sig_header, expected):
         logger.warning("whatsapp.webhook.invalid_signature")
         return Response(status_code=401)
@@ -136,6 +139,4 @@ async def _process_whatsapp_payload(payload: dict) -> None:
                             session=session,
                         )
                 except Exception:
-                    logger.exception(
-                        "whatsapp.webhook.ingest_failed wamid=%s", wamid
-                    )
+                    logger.exception("whatsapp.webhook.ingest_failed wamid=%s", wamid)

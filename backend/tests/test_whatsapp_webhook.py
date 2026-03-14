@@ -94,9 +94,7 @@ def _make_payload(
                         "value": {
                             "messaging_product": "whatsapp",
                             "metadata": {"phone_number_id": "123"},
-                            "contacts": [
-                                {"profile": {"name": name}, "wa_id": phone}
-                            ],
+                            "contacts": [{"profile": {"name": name}, "wa_id": phone}],
                             "messages": [msg],
                         }
                     }
@@ -249,8 +247,7 @@ async def test_valid_inbound_text_stored(client: AsyncClient) -> None:
         assert conv["unread_count"] == 1
 
         msg = await conn.fetchrow(
-            "SELECT direction::text, body FROM messages"
-            " WHERE conversation_id = $1",
+            "SELECT direction::text, body FROM messages" " WHERE conversation_id = $1",
             conv["id"],
         )
         assert msg is not None
