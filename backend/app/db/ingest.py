@@ -445,3 +445,70 @@ async def ingest_beds24_message(
         )
 
     return inserted
+
+
+async def ingest_whatsapp_message(
+    wamid: str,
+    phone: str,
+    guest_name: str,
+    body: str,
+    sent_at: datetime,
+    session: AsyncSession,
+) -> bool:
+    """Persist an inbound WhatsApp message idempotently.
+
+    Returns True if a new message row was inserted, False if deduplicated.
+    `wamid` is Meta's globally unique message ID and serves as the dedup key.
+    """
+    conv_result = await session.execute(
+        _SQL_UPSERT_CONVERSATION,
+        {
+            "platform": "whatsapp",
+            "guest_name": guest_name,
+            "guest_contact": phone,  # E.164 without '+'; partial-unique-index dedup key
+            "property_id": None,  # no booking context; staff can tag later
+            "sent_at": sent_at,
+        },
+    )
+    conversation_id = str(conv_result.scalar_one())
+
+    message_hash = compute_hash(wamid)
+    raw_headers = json.dumps(
+        {"wamid": wamid, "phone": phone, "timestamp": sent_at.isoformat()}
+    )
+
+    msg_result = await session.execute(
+        _SQL_INSERT_MESSAGE,
+        {
+            "conversation_id": conversation_id,
+            "message_id_hash": message_hash,
+            "direction": "inbound",
+            "body": body,
+            "sent_at": sent_at,
+            "raw_headers": raw_headers,
+        },
+    )
+    row = msg_result.fetchone()
+    inserted = row is not None and bool(row[1])
+
+    if inserted:
+        message_id = str(row[0])
+        await session.execute(_SQL_INCREMENT_UNREAD, {"conv_id": conversation_id})
+
+    await session.commit()
+
+    if inserted:
+        logger.info(
+            "ingest.whatsapp.inserted conv_id=%s hash=%s",
+            conversation_id,
+            message_hash[:12],
+        )
+        await _try_publish(conversation_id, message_id, "inbound", body, sent_at)
+    else:
+        logger.debug(
+            "ingest.whatsapp.duplicate hash=%s conv_id=%s",
+            message_hash[:12],
+            conversation_id,
+        )
+
+    return inserted
