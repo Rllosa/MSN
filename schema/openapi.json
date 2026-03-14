@@ -866,6 +866,48 @@
         }
       }
     },
+    "/api/webhooks/whatsapp": {
+      "get": {
+        "tags": [
+          "webhooks"
+        ],
+        "summary": "Whatsapp Verify",
+        "description": "Respond to Meta's webhook verification challenge.",
+        "operationId": "whatsapp_verify_api_webhooks_whatsapp_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "webhooks"
+        ],
+        "summary": "Whatsapp Inbound",
+        "description": "Receive an inbound WhatsApp message from Meta Cloud API.\n\nValidates HMAC-SHA256 signature, returns 200 immediately, and processes\nthe payload in a background task so Meta never times out waiting for us.",
+        "operationId": "whatsapp_inbound_api_webhooks_whatsapp_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Whatsapp Inbound Api Webhooks Whatsapp Post"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "summary": "Health",
