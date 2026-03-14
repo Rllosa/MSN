@@ -118,7 +118,7 @@ export default function InboxPage() {
     fetchList(true).finally(() => setLoadingList(false));
     getProperties()
       .then(setProperties)
-      .catch(() => {});
+      .catch((err) => console.error("getProperties failed", err));
 
     const onFocus = () => fetchList(true).catch(() => {});
     window.addEventListener("focus", onFocus);
@@ -259,7 +259,7 @@ export default function InboxPage() {
               className="w-full bg-zinc-800 text-sm text-white placeholder-zinc-500 rounded-lg pl-8 pr-3 py-1.5 outline-none focus:ring-1 focus:ring-blue-600"
             />
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2">
             <button
               onClick={() => setUnreadOnly((v) => !v)}
               className={`text-xs font-medium px-3 py-1 rounded-full transition-colors ${
@@ -268,7 +268,7 @@ export default function InboxPage() {
                   : "bg-zinc-800 text-zinc-400 hover:text-zinc-200"
               }`}
             >
-              Unread only
+              Unread
             </button>
 
             <FilterDropdown
@@ -279,15 +279,13 @@ export default function InboxPage() {
               onClear={clearPlatforms}
             />
 
-            {propertyItems.length > 0 && (
-              <FilterDropdown
-                label="Property"
-                items={propertyItems}
-                selected={selectedPropertyIds}
-                onToggle={toggleProperty}
-                onClear={clearProperties}
-              />
-            )}
+            <FilterDropdown
+              label="Property"
+              items={propertyItems}
+              selected={selectedPropertyIds}
+              onToggle={toggleProperty}
+              onClear={clearProperties}
+            />
           </div>
         </div>
 
