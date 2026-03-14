@@ -107,7 +107,10 @@ async def _try_publish(
 # ---------------------------------------------------------------------------
 
 _SQL_PROPERTY_BY_NAME = text(
-    "SELECT id FROM properties WHERE LOWER(name) = LOWER(:name) LIMIT 1"
+    "SELECT id FROM properties"
+    " WHERE LOWER(:name) LIKE LOWER(name) || '%'"
+    " AND is_active = TRUE"
+    " ORDER BY LENGTH(name) DESC LIMIT 1"
 )
 
 _SQL_PLATFORM_BY_GUEST_CONTACT = text(
@@ -119,6 +122,38 @@ _SQL_PLATFORM_BY_GUEST_CONTACT = text(
 _SQL_PROPERTY_BY_BEDS24_ID = text(
     "SELECT id FROM properties WHERE beds24_property_id = :beds24_id LIMIT 1"
 )
+
+# Merge multiple inquiries from the same guest into one conversation thread.
+_SQL_CONV_BY_GUEST_NAME = text(
+    "SELECT id FROM conversations"
+    " WHERE platform = 'airbnb'"
+    " AND LOWER(guest_name) = LOWER(:guest_name)"
+    " AND guest_name != 'Unknown'"
+    " AND guest_contact LIKE '%@reply.airbnb.com'"
+    " ORDER BY created_at ASC LIMIT 1"
+)
+
+_SQL_UPDATE_GUEST_CONTACT = text(
+    "UPDATE conversations SET guest_contact = :guest_contact WHERE id = :id"
+)
+
+# For outbound (host reply echo): find the conversation that owns this Reply-To token.
+_SQL_CONV_BY_GUEST_CONTACT = text(
+    "SELECT id FROM conversations WHERE guest_contact = :guest_contact LIMIT 1"
+)
+
+# Airbnb listing subjects sometimes use "AptN" instead of the property name.
+# Map apt number to Beds24 property ID for fallback lookup.
+_RE_APT_LABEL = re.compile(r"^Apt(\d)\b", re.IGNORECASE)
+_APT_NUM_TO_BEDS24_ID: dict[int, int] = {
+    1: 314537,
+    2: 314539,
+    3: 314538,
+    4: 314541,
+    5: 314540,
+    6: 314542,
+    7: 314543,
+}
 
 _SQL_UPSERT_CONVERSATION = text(
     """
@@ -187,10 +222,21 @@ async def ingest_airbnb_email(
       2. Conversation upsert via ON CONFLICT (platform, guest_contact).
       3. Message insert via ON CONFLICT (message_id_hash) DO NOTHING.
     """
-    # 1. Property lookup
+    # 1. Property lookup — try name prefix first, then AptN fallback
     row = await session.execute(_SQL_PROPERTY_BY_NAME, {"name": parsed.property_name})
     prop_row = row.first()
     property_id = str(prop_row[0]) if prop_row else None
+
+    if not property_id:
+        apt_m = _RE_APT_LABEL.match(parsed.property_name)
+        if apt_m:
+            beds24_id = _APT_NUM_TO_BEDS24_ID.get(int(apt_m.group(1)))
+            if beds24_id:
+                row2 = await session.execute(
+                    _SQL_PROPERTY_BY_BEDS24_ID, {"beds24_id": beds24_id}
+                )
+                prop_row2 = row2.first()
+                property_id = str(prop_row2[0]) if prop_row2 else None
 
     if not property_id:
         logger.warning(
@@ -199,19 +245,52 @@ async def ingest_airbnb_email(
             parsed.platform_conversation_id,
         )
 
-    # 2. Conversation upsert
+    # 2. Conversation lookup / upsert
     sent_at = parsed.sent_at or datetime.now(UTC)
-    conv_result = await session.execute(
-        _SQL_UPSERT_CONVERSATION,
-        {
-            "platform": "airbnb",
-            "guest_name": parsed.guest_name,
-            "guest_contact": parsed.reply_to,
-            "property_id": property_id,
-            "sent_at": sent_at,
-        },
-    )
-    conversation_id = str(conv_result.scalar_one())
+    conversation_id: str | None = None
+
+    if parsed.direction == "outbound":
+        # Host reply echo — attach to the conversation that owns this Reply-To token.
+        # Never create a new conversation and never overwrite guest_name.
+        existing = await session.execute(
+            _SQL_CONV_BY_GUEST_CONTACT, {"guest_contact": parsed.reply_to}
+        )
+        existing_row = existing.first()
+        if existing_row:
+            conversation_id = str(existing_row[0])
+        else:
+            # No matching conversation yet — drop the message silently.
+            logger.debug(
+                "ingest.airbnb.outbound_no_conv reply_to=%s", parsed.reply_to
+            )
+            return False
+    else:
+        # Inbound guest inquiry — merge by guest name if we already have one.
+        if parsed.guest_name and parsed.guest_name != "Unknown":
+            existing = await session.execute(
+                _SQL_CONV_BY_GUEST_NAME, {"guest_name": parsed.guest_name}
+            )
+            existing_row = existing.first()
+            if existing_row:
+                conversation_id = str(existing_row[0])
+                # Update guest_contact to the latest Reply-To token (needed for replies)
+                await session.execute(
+                    _SQL_UPDATE_GUEST_CONTACT,
+                    {"guest_contact": parsed.reply_to, "id": conversation_id},
+                )
+
+        if not conversation_id:
+            conv_result = await session.execute(
+                _SQL_UPSERT_CONVERSATION,
+                {
+                    "platform": "airbnb",
+                    "guest_name": parsed.guest_name,
+                    "guest_contact": parsed.reply_to,
+                    "property_id": property_id,
+                    "sent_at": sent_at,
+                },
+            )
+            conversation_id = str(conv_result.scalar_one())
 
     # 3. Message insert
     message_hash = compute_hash(parsed.message_id_header)
@@ -226,7 +305,7 @@ async def ingest_airbnb_email(
         {
             "conversation_id": conversation_id,
             "message_id_hash": message_hash,
-            "direction": "inbound",
+            "direction": parsed.direction,
             "body": parsed.message_body,
             "sent_at": sent_at,
             "raw_headers": raw_headers,
@@ -237,7 +316,8 @@ async def ingest_airbnb_email(
 
     if inserted:
         message_id = str(row[0])
-        await session.execute(_SQL_INCREMENT_UNREAD, {"conv_id": conversation_id})
+        if parsed.direction == "inbound":
+            await session.execute(_SQL_INCREMENT_UNREAD, {"conv_id": conversation_id})
 
     await session.commit()
 

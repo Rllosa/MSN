@@ -49,7 +49,7 @@ def test_parse_airbnb_message_golden() -> None:
     assert result.guest_name == "Jordan"
     assert result.reply_to == "9xk2p8qFAKETOKEN456def@reply.airbnb.com"
     assert result.platform_conversation_id == "9xk2p8qFAKETOKEN456def"
-    assert result.property_name == "Studio Vue Mer - Résidence Caraïbes"
+    assert result.property_name == "Studio Vue Mer - Lagoon View"
     assert "juillet" in result.message_body
     assert "protection" not in result.message_body.lower()
 
