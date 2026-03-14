@@ -91,11 +91,12 @@ async def _poll_once(client: Beds24Client, refresh_token: str) -> str:
         for msg in messages:
             booking = booking_map.get(msg["bookingId"])
             if not booking:
-                # Pre-booking not yet confirmed — not returned by GET /bookings.
-                # Beds24 POST /bookings/messages works for all bookingIds, so
-                # replies still go through. Default platform to 'booking'.
+                # Pre-booking not yet confirmed (or archived) — not returned by
+                # GET /bookings. Detect platform from message content: Airbnb
+                # messages contain muscache.com CDN links.
                 booking = {"id": msg["bookingId"], "firstName": "", "lastName": ""}
-                platform = "booking"
+                body = msg.get("message", "")
+                platform = "airbnb" if "muscache.com" in body else "booking"
             else:
                 # Use channel as platform label; fall back to 'direct'.
                 # Beds24 POST /bookings/messages works regardless of channel,

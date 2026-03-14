@@ -1,14 +1,21 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as authApi from "./api/auth";
+import * as convsApi from "./api/conversations";
 import App from "./App";
 import { useAuthStore } from "./store/auth";
 
-// Hoist mock so App.tsx receives the mocked binding at import time
+// Hoist mocks so all consumers receive mocked bindings at import time
 vi.mock("./api/auth", () => ({
   postRefresh: vi.fn(),
   postLogin: vi.fn(),
   postLogout: vi.fn(),
+}));
+
+vi.mock("./api/conversations", () => ({
+  getConversations: vi.fn(),
+  getConversation: vi.fn(),
+  markConversationRead: vi.fn(),
 }));
 
 beforeEach(() => {
@@ -16,6 +23,13 @@ beforeEach(() => {
   vi.resetAllMocks();
   // BrowserRouter uses window.location; reset between tests so each starts at "/"
   window.history.pushState({}, "", "/");
+  // Default: empty inbox
+  vi.mocked(convsApi.getConversations).mockResolvedValue({
+    items: [],
+    total: 0,
+    limit: 20,
+    offset: 0,
+  });
 });
 
 describe("App", () => {
@@ -28,7 +42,7 @@ describe("App", () => {
     expect(await screen.findByRole("button", { name: /sign in/i })).toBeInTheDocument();
   });
 
-  it("shows inbox placeholder when session is restored (silent refresh succeeds)", async () => {
+  it("shows inbox when session is restored (silent refresh succeeds)", async () => {
     vi.mocked(authApi.postRefresh).mockResolvedValue({
       access_token: "restored-tok",
     });
@@ -36,7 +50,7 @@ describe("App", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText("MSN — Unified Messaging Dashboard")).toBeInTheDocument();
+      expect(screen.getByText("Inbox")).toBeInTheDocument();
     });
   });
 });

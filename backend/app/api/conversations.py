@@ -90,9 +90,7 @@ _CONV_SELECT = """\
 
 # Fixed ORDER + pagination used in the list query
 _CONV_ORDER = (
-    " ORDER BY (c.unread_count > 0) DESC,"
-    " c.last_message_at DESC NULLS LAST"
-    " LIMIT :limit OFFSET :offset"
+    " ORDER BY c.last_message_at DESC NULLS LAST" " LIMIT :limit OFFSET :offset"
 )
 
 _SQL_CONV_BY_ID = text(
@@ -103,7 +101,9 @@ _SQL_LAST_MESSAGES = text("""
     SELECT id::text, direction::text, body, sent_at, created_at
     FROM messages
     WHERE conversation_id = :conv_id
-    ORDER BY sent_at DESC
+    ORDER BY sent_at ASC,
+             (raw_headers->>'beds24_message_id')::bigint DESC NULLS LAST,
+             created_at ASC
     LIMIT 50
 """)
 
@@ -112,7 +112,9 @@ _SQL_MESSAGES_WITH_CURSOR = text("""
     FROM messages
     WHERE conversation_id = :conv_id
       AND sent_at < :before
-    ORDER BY sent_at DESC
+    ORDER BY sent_at DESC,
+             (raw_headers->>'beds24_message_id')::bigint ASC NULLS LAST,
+             created_at DESC
     LIMIT 51
 """)
 
@@ -120,7 +122,9 @@ _SQL_MESSAGES_NO_CURSOR = text("""
     SELECT id::text, direction::text, body, sent_at, created_at
     FROM messages
     WHERE conversation_id = :conv_id
-    ORDER BY sent_at DESC
+    ORDER BY sent_at DESC,
+             (raw_headers->>'beds24_message_id')::bigint ASC NULLS LAST,
+             created_at DESC
     LIMIT 51
 """)
 
@@ -145,10 +149,11 @@ _SQL_CONV_EXISTS = text("SELECT id FROM conversations WHERE id = :conv_id")
 
 
 def _build_where(
-    platform: str | None,
+    platforms: list[str] | None,
     property_ids: list[str] | None,
     conv_status: str | None,
     search: str | None,
+    unread_only: bool = False,
 ) -> tuple[str, dict]:
     """Return (where_clause_sql, params) for the conversations list query.
 
@@ -165,9 +170,11 @@ def _build_where(
     else:
         clauses.append("c.status = 'active'")
 
-    if platform is not None:
-        clauses.append("c.platform::text = :platform")
-        params["platform"] = platform
+    if platforms:
+        ph = ", ".join(f":plat{i}" for i in range(len(platforms)))
+        clauses.append(f"c.platform::text IN ({ph})")
+        for i, p in enumerate(platforms):
+            params[f"plat{i}"] = p
 
     if property_ids:
         # Named placeholders for each ID avoids array binding complexity
@@ -179,6 +186,9 @@ def _build_where(
     if search is not None:
         clauses.append("(c.guest_name ILIKE :search OR c.guest_contact ILIKE :search)")
         params["search"] = f"%{search}%"
+
+    if unread_only:
+        clauses.append("c.unread_count > 0")
 
     where = "WHERE " + " AND ".join(clauses) if clauses else ""
     return where, params
@@ -223,23 +233,27 @@ def _to_message(row) -> MessageOut:  # type: ignore[no-untyped-def]
 async def list_conversations(
     _: CurrentUser,
     session: SessionDep,
-    platform: Annotated[
-        Literal["airbnb", "booking", "whatsapp", "direct"] | None, Query()
-    ] = None,
+    platform: Annotated[str | None, Query()] = None,
     property_id: Annotated[str | None, Query()] = None,
     conv_status: Annotated[
         Literal["active", "archived"] | None, Query(alias="status")
     ] = None,
     search: Annotated[str | None, Query(min_length=1, max_length=100)] = None,
+    unread_only: Annotated[bool, Query(alias="unread_only")] = False,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> ConversationsPage:
+    platforms = (
+        [p.strip() for p in platform.split(",") if p.strip()] if platform else None
+    )
     property_ids = (
         [p.strip() for p in property_id.split(",") if p.strip()]
         if property_id
         else None
     )
-    where, params = _build_where(platform, property_ids, conv_status, search)
+    where, params = _build_where(
+        platforms, property_ids, conv_status, search, unread_only
+    )
 
     total: int = (
         await session.execute(
@@ -278,11 +292,10 @@ async def get_conversation(
             detail="Conversation not found",
         )
 
-    # Last 50 messages fetched DESC, reversed to chronological for the response
     msg_rows = (
         await session.execute(_SQL_LAST_MESSAGES, {"conv_id": conv_id})
     ).fetchall()
-    messages = [_to_message(m) for m in reversed(msg_rows)]
+    messages = [_to_message(m) for m in msg_rows]
 
     return ConversationDetail(**_to_summary(row).model_dump(), messages=messages)
 
