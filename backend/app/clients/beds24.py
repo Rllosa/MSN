@@ -101,12 +101,12 @@ class Beds24Client:
         return data, next_exists
 
     async def get_all_guest_messages(self) -> list[dict]:
-        """Fetch all pages and return only guest-sourced messages."""
+        """Fetch all pages and return all messages (guest + host)."""
         all_msgs: list[dict] = []
         page = 1
         while True:
             msgs, has_next = await self.get_messages(page=page)
-            all_msgs.extend(m for m in msgs if m.get("source") == "guest")
+            all_msgs.extend(msgs)
             if not has_next:
                 break
             page += 1

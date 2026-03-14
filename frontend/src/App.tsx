@@ -2,19 +2,9 @@ import { useEffect, useState } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { postRefresh } from "./api/auth";
 import RequireAuth from "./components/RequireAuth";
+import InboxPage from "./pages/InboxPage";
 import LoginPage from "./pages/LoginPage";
 import { useAuthStore } from "./store/auth";
-
-// TODO(SOLO-115): replace with real inbox view
-function InboxPlaceholder() {
-  return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-      <h1 className="text-2xl font-semibold text-gray-800">
-        MSN — Unified Messaging Dashboard
-      </h1>
-    </div>
-  );
-}
 
 export default function App() {
   const setToken = useAuthStore((s) => s.setToken);
@@ -43,7 +33,9 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route element={<RequireAuth />}>
-          <Route path="/" element={<InboxPlaceholder />} />
+          <Route path="/inbox" element={<InboxPage />} />
+          <Route path="/inbox/:conversationId" element={<InboxPage />} />
+          <Route path="/" element={<Navigate to="/inbox" replace />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

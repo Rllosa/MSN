@@ -23,7 +23,9 @@ client.interceptors.response.use(
       _retry?: boolean;
     };
 
-    if (error.response?.status === 401 && !original._retry) {
+    // Don't retry refresh calls — they're already a last-resort auth attempt
+    const isRefreshCall = original.url?.includes("/auth/refresh");
+    if (error.response?.status === 401 && !original._retry && !isRefreshCall) {
       original._retry = true;
       try {
         // Import lazily to avoid circular dependency between client ↔ auth

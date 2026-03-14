@@ -1,7 +1,7 @@
 """Message ingestion — idempotent upsert pipeline for all platforms.
 
 All SQL strings are pre-built at module scope (Rule 16.5).
-Conversation upsert uses ON CONFLICT (platform, guest_contact) DO UPDATE.
+Conversation upsert uses ON CONFLICT (guest_contact) WHERE guest_contact IS NOT NULL DO UPDATE.
 Message insert uses ON CONFLICT (message_id_hash) DO NOTHING for deduplication.
 """
 
@@ -10,14 +10,52 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 from datetime import UTC, datetime
+from pathlib import Path
 
+import httpx
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.parsers.airbnb import AirbnbParsedEmail
 
 logger = logging.getLogger(__name__)
+
+_ATTACHMENTS_DIR = Path(__file__).parent.parent.parent / "media" / "attachments"
+_ATTACHMENTS_DIR.mkdir(parents=True, exist_ok=True)
+
+_IMG_TAG_RE = re.compile(r'<img[^>]+src="([^"]+)"', re.IGNORECASE)
+
+
+async def _cache_images(body: str) -> str:
+    """Download any <img src="..."> URLs in body, save locally, return body with local URLs."""
+    matches = list(_IMG_TAG_RE.finditer(body))
+    if not matches:
+        return body
+
+    async with httpx.AsyncClient(timeout=15, follow_redirects=True) as http:
+        for match in matches:
+            url = match.group(1)
+            url_hash = hashlib.sha256(url.encode()).hexdigest()[:24]
+            # Guess extension from URL path
+            path_part = url.split("?")[0]
+            ext = Path(path_part).suffix.lower() or ".jpg"
+            if ext not in {".jpg", ".jpeg", ".png", ".gif", ".webp"}:
+                ext = ".jpg"
+            local_path = _ATTACHMENTS_DIR / f"{url_hash}{ext}"
+            if not local_path.exists():
+                try:
+                    resp = await http.get(url)
+                    resp.raise_for_status()
+                    local_path.write_bytes(resp.content)
+                    logger.debug("ingest.cached_image %s → %s", url[:60], local_path.name)
+                except Exception as exc:
+                    logger.warning("ingest.image_download_failed url=%s err=%s", url[:80], exc)
+                    continue
+            body = body.replace(url, f"/media/attachments/{local_path.name}")
+
+    return body
 
 
 # ---------------------------------------------------------------------------
@@ -67,6 +105,12 @@ _SQL_PROPERTY_BY_NAME = text(
     "SELECT id FROM properties WHERE LOWER(name) = LOWER(:name) LIMIT 1"
 )
 
+_SQL_PLATFORM_BY_GUEST_CONTACT = text(
+    "SELECT platform FROM conversations"
+    " WHERE guest_contact = :guest_contact AND platform NOT IN ('booking', 'direct')"
+    " LIMIT 1"
+)
+
 _SQL_PROPERTY_BY_BEDS24_ID = text(
     "SELECT id FROM properties WHERE beds24_property_id = :beds24_id LIMIT 1"
 )
@@ -77,8 +121,17 @@ _SQL_UPSERT_CONVERSATION = text(
                                last_message_at, created_at, updated_at)
     VALUES (:platform, :guest_name, :guest_contact, :property_id,
             :sent_at, NOW(), NOW())
-    ON CONFLICT (platform, guest_contact) DO UPDATE
-        SET guest_name   = EXCLUDED.guest_name,
+    ON CONFLICT (guest_contact) WHERE guest_contact IS NOT NULL DO UPDATE
+        SET platform     = CASE
+                WHEN EXCLUDED.platform NOT IN ('booking', 'direct')
+                THEN EXCLUDED.platform
+                ELSE conversations.platform
+            END,
+            guest_name   = CASE
+                WHEN EXCLUDED.guest_name != 'Unknown' AND EXCLUDED.guest_name != ''
+                THEN EXCLUDED.guest_name
+                ELSE conversations.guest_name
+            END,
             property_id  = COALESCE(EXCLUDED.property_id, conversations.property_id),
             last_message_at = GREATEST(
                 conversations.last_message_at, EXCLUDED.last_message_at
@@ -100,8 +153,8 @@ _SQL_INSERT_MESSAGE = text(
                           body, sent_at, raw_headers, created_at)
     VALUES (:conversation_id, :message_id_hash, :direction,
             :body, :sent_at, CAST(:raw_headers AS jsonb), NOW())
-    ON CONFLICT (message_id_hash) DO NOTHING
-    RETURNING id
+    ON CONFLICT (message_id_hash) DO UPDATE SET direction = EXCLUDED.direction
+    RETURNING id, (xmax = 0) AS was_inserted
     """
 )
 
@@ -175,7 +228,7 @@ async def ingest_airbnb_email(
         },
     )
     row = msg_result.fetchone()
-    inserted = row is not None
+    inserted = row is not None and bool(row[1])
 
     if inserted:
         message_id = str(row[0])
@@ -269,24 +322,27 @@ async def ingest_beds24_message(
             "propertyId": beds24_property_id,
         }
     )
-    body = msg.get("message", "")
+    body = await _cache_images(msg.get("message", ""))
+    direction = "outbound" if msg.get("source") == "host" else "inbound"
     msg_result = await session.execute(
         _SQL_INSERT_MESSAGE,
         {
             "conversation_id": conversation_id,
             "message_id_hash": message_hash,
-            "direction": "inbound",
+            "direction": direction,
             "body": body,
             "sent_at": sent_at,
             "raw_headers": raw_headers,
         },
     )
     row = msg_result.fetchone()
-    inserted = row is not None
+    # was_inserted is True for new rows, False for direction-update-only
+    inserted = row is not None and bool(row[1])
 
     if inserted:
         message_id = str(row[0])
-        await session.execute(_SQL_INCREMENT_UNREAD, {"conv_id": conversation_id})
+        if direction == "inbound":
+            await session.execute(_SQL_INCREMENT_UNREAD, {"conv_id": conversation_id})
 
     await session.commit()
 
@@ -297,7 +353,7 @@ async def ingest_beds24_message(
             conversation_id,
             message_hash[:12],
         )
-        await _try_publish(conversation_id, message_id, "inbound", body, sent_at)
+        await _try_publish(conversation_id, message_id, direction, body, sent_at)
     else:
         logger.debug(
             "ingest.beds24.duplicate hash=%s conv_id=%s",

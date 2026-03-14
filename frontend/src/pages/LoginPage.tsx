@@ -30,26 +30,21 @@ export default function LoginPage() {
   }
 
   return (
-    <div
-      className="min-h-screen flex items-center justify-center px-4"
-      style={{ background: "linear-gradient(135deg, #EFF6FF 0%, #F1F5F9 100%)" }}
-    >
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-8">
+    <div className="min-h-screen flex items-center justify-center px-4 bg-[#111111]">
+      <div className="bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-2xl w-full max-w-sm p-8">
         {/* Brand */}
         <div className="text-center mb-8">
-          <p className="text-xs font-semibold tracking-[0.25em] uppercase text-gray-400 mb-1">
+          <p className="text-xs font-semibold tracking-[0.25em] uppercase text-zinc-500 mb-1">
             The Black Palm
           </p>
-          <h1 className="text-2xl font-bold" style={{ color: "#1E40AF" }}>
-            Dashboard
-          </h1>
+          <h1 className="text-2xl font-bold text-white">Dashboard</h1>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label
               htmlFor="email"
-              className="block text-sm font-medium text-gray-700 mb-1"
+              className="block text-sm font-medium text-zinc-400 mb-1.5"
             >
               Email
             </label>
@@ -60,8 +55,7 @@ export default function LoginPage() {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:border-transparent"
-              style={{ "--tw-ring-color": "#1E40AF" } as React.CSSProperties}
+              className="w-full rounded-lg bg-[#2a2a2a] border border-white/10 px-3 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
               placeholder="you@example.com"
             />
           </div>
@@ -69,7 +63,7 @@ export default function LoginPage() {
           <div>
             <label
               htmlFor="password"
-              className="block text-sm font-medium text-gray-700 mb-1"
+              className="block text-sm font-medium text-zinc-400 mb-1.5"
             >
               Password
             </label>
@@ -80,13 +74,13 @@ export default function LoginPage() {
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:border-transparent"
+              className="w-full rounded-lg bg-[#2a2a2a] border border-white/10 px-3 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
               placeholder="••••••••"
             />
           </div>
 
           {error && (
-            <p role="alert" className="text-sm text-red-600">
+            <p role="alert" className="text-sm text-red-400">
               {error}
             </p>
           )}
@@ -94,8 +88,7 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-lg px-4 py-2.5 text-sm font-semibold text-white transition-opacity disabled:opacity-50 disabled:cursor-not-allowed mt-2"
-            style={{ backgroundColor: "#1E40AF" }}
+            className="w-full rounded-lg px-4 py-2.5 text-sm font-semibold text-white bg-blue-700 hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed mt-2"
           >
             {loading ? "Signing in…" : "Sign in"}
           </button>

@@ -122,8 +122,8 @@ async def test_get_messages_returns_data_and_pagination() -> None:
 
 
 @pytest.mark.asyncio
-async def test_get_all_guest_messages_filters_host_messages() -> None:
-    """get_all_guest_messages() returns only source=='guest' messages."""
+async def test_get_all_guest_messages_returns_all_sources() -> None:
+    """get_all_guest_messages() returns both guest and host messages."""
     http = _mock_http()
     msgs = [
         {"id": 1, "bookingId": 100, "source": "guest", "message": "Hi"},
@@ -142,8 +142,9 @@ async def test_get_all_guest_messages_filters_host_messages() -> None:
 
     result = await client.get_all_guest_messages()
 
-    assert len(result) == 2
-    assert all(m["source"] == "guest" for m in result)
+    assert len(result) == 3
+    sources = {m["source"] for m in result}
+    assert sources == {"guest", "host"}
 
 
 # ---------------------------------------------------------------------------

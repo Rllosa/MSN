@@ -48,6 +48,8 @@ services:
         condition: service_healthy
     ports:
       - "8000:8000"
+    volumes:
+      - media_attachments:/app/media/attachments
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
       interval: 15s
@@ -75,3 +77,4 @@ networks:
 
 volumes:
   postgres_data:
+  media_attachments:
