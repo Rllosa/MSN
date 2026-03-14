@@ -83,6 +83,11 @@ export default function ConversationItem({ conv, selected, onClick }: Props) {
       </div>
       <div className="flex items-center gap-2 pl-[42px]">
         <PlatformBadge platform={conv.platform} />
+        {conv.guest_contact?.endsWith("@reply.airbnb.com") && (
+          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 shrink-0">
+            Inquiry
+          </span>
+        )}
         {conv.property_name && (
           <span className="text-xs text-zinc-500 truncate">{conv.property_name}</span>
         )}

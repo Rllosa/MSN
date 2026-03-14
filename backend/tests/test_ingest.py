@@ -130,6 +130,7 @@ def _make_parsed(
     return AirbnbParsedEmail(
         guest_name="Alice Guest",
         message_body=body,
+        direction="inbound",
         reply_to=reply_to,
         platform_conversation_id="TOKEN123",
         property_name=property_name,

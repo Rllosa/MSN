@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import email
+import email.header
 import email.utils
 import logging
 import re
@@ -22,14 +23,25 @@ _RE_REPLY_TO = re.compile(r"^([^@\s]+)@reply\.airbnb\.com$", re.IGNORECASE)
 # Airbnb sender domain check
 _RE_AIRBNB_FROM = re.compile(r"@(?:[a-z0-9.-]+\.)?airbnb\.com", re.IGNORECASE)
 
+# Optional "Objet : " or "Object : " prefix (French/English "Subject:") that
+# Airbnb prepends in some locales.
+_RE_SUBJECT_OBJET = re.compile(r"^Objet\s*\xa0?:\s*", re.IGNORECASE)
+
+# Only ingest pre-booking inquiry emails — skip booking confirmations, messages, etc.
+_RE_SUBJECT_INQUIRY = re.compile(
+    r"^Demande\s+d['\u2019]information\s+pour\b",
+    re.IGNORECASE,
+)
+
 # Subject prefixes where the remainder IS the property name (+ optional date range)
 _RE_SUBJECT_PREFIX = re.compile(
     r"^(?:"
     r"Demande\s+d['\u2019]information\s+pour"
+    r"|Demande\s+pour"
     r"|Nouvelle\s+demande\s+de\s+r[eé]servation\s+pour"
-    r"|R[eé]servation\s+de\s+.+\s+pour"
+    r"|R[eé]servation\s+(?:de\s+.+\s+)?pour"
     r"|Inquiry\s+about"
-    r"|Reservation\s+request\s+for"
+    r"|Reservation\s+(?:request\s+)?for"
     r")\s+",
     re.IGNORECASE,
 )
@@ -45,18 +57,33 @@ _RE_TRAILING_DATE = re.compile(
     r",\s*\d{1,2}[–—\-]\d{1,2}\s+\w+\s*$" r"|\s*,\s*\w+\s+\d{1,2}[–—\-]\d{1,2}\s*$",
 )
 
+# Role labels that Airbnb injects above the message — strip from body
+_RE_ROLE_LABEL = re.compile(
+    r"^(?:Responsable\s+de\s+la\s+r[eé]servation|Co-h[oô]te|H[oô]te|Guest|Host)\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+# Detect host (outbound) role label — "Co-hôte" or standalone "Hôte"
+_RE_ROLE_HOST = re.compile(r"^(?:Co-h[oô]te|H[oô]te)$", re.IGNORECASE)
+
 # Boilerplate blocks to strip from message body (French + English)
 _BOILERPLATE_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(
-        r"Pour votre protection.*?(?:Airbnb|\.)\s*",
+        r"Pour votre protection.*?Airbnb\s*\.?\s*",
         re.IGNORECASE | re.DOTALL,
     ),
     re.compile(
-        r"For your (?:protection|safety).*?(?:Airbnb|\.)\s*",
+        r"For your (?:protection|safety).*?Airbnb\s*\.?\s*",
         re.IGNORECASE | re.DOTALL,
     ),
     re.compile(r"Traduit automatiquement.*$", re.IGNORECASE | re.DOTALL),
     re.compile(r"Automatically translated.*$", re.IGNORECASE | re.DOTALL),
+    re.compile(r"Vous pouvez [eé]galement r[eé]pondre.*$", re.IGNORECASE | re.DOTALL),
+    re.compile(r"You can also reply.*$", re.IGNORECASE | re.DOTALL),
+    re.compile(r"Appartement en r[eé]sidence.*$", re.IGNORECASE | re.DOTALL),
+    re.compile(r"T[eé]l[eé]chargez l.application.*$", re.IGNORECASE | re.DOTALL),
+    re.compile(r"Airbnb Ireland.*$", re.IGNORECASE | re.DOTALL),
+    re.compile(r"Modifiez vos pr[eé]f[eé]rences.*$", re.IGNORECASE | re.DOTALL),
 )
 
 # Anchor for property name in body: "Hôte :" or "Host:"
@@ -72,6 +99,7 @@ _RE_HOST_ANCHOR = re.compile(r"H[oô]te\s*:|Host\s*:", re.IGNORECASE)
 class AirbnbParsedEmail:
     guest_name: str
     message_body: str
+    direction: str  # "inbound" (guest) or "outbound" (host reply echoed by Airbnb)
     reply_to: str  # full address: TOKEN@reply.airbnb.com
     platform_conversation_id: str  # token portion before @
     property_name: str  # raw listing name; caller does case-insensitive DB lookup
@@ -104,6 +132,17 @@ def parse_airbnb_email(raw_bytes: bytes) -> AirbnbParsedEmail | None:
     message_id = message_id_header or "<unknown>"
     sent_at = _parse_date(msg.get("Date", ""))
 
+    # 0. Only ingest pre-booking inquiry emails ("Demande d'information pour …")
+    raw_subject = _decode_header(msg.get("Subject", ""))
+    clean_subject = _RE_SUBJECT_OBJET.sub("", raw_subject).strip()
+    if not _RE_SUBJECT_INQUIRY.match(clean_subject):
+        logger.debug(
+            "airbnb.skipped_non_inquiry message_id=%s subject=%r",
+            message_id,
+            clean_subject[:60],
+        )
+        return None
+
     # 1. Reply-To → reply address + platform conversation ID
     reply_to_header = msg.get("Reply-To", "").strip()
     m = _RE_REPLY_TO.match(reply_to_header)
@@ -121,19 +160,21 @@ def parse_airbnb_email(raw_bytes: bytes) -> AirbnbParsedEmail | None:
     platform_conversation_id = m.group(1)
 
     # 2. Property name — primary: subject; fallback: HTML body
-    subject = msg.get("Subject", "")
+    subject = _decode_header(msg.get("Subject", ""))
     property_name = _extract_property_from_subject(subject)
 
-    # 3. HTML body → guest name + message text
+    # 3. HTML body → direction, guest name, message text
     html = _get_html_body(msg)
     if html:
         soup = BeautifulSoup(html, "html.parser")
+        direction = _extract_direction(soup)
         guest_name = _extract_guest_name(soup) or "Unknown"
         message_body = _extract_message_body(soup)
         if not property_name:
             property_name = _extract_property_from_body(soup) or ""
     else:
         plain = _get_plain_body(msg) or ""
+        direction = "inbound"
         guest_name = "Unknown"
         message_body = plain.strip()
 
@@ -153,6 +194,7 @@ def parse_airbnb_email(raw_bytes: bytes) -> AirbnbParsedEmail | None:
     return AirbnbParsedEmail(
         guest_name=guest_name,
         message_body=message_body,
+        direction=direction,
         reply_to=reply_to,
         platform_conversation_id=platform_conversation_id,
         property_name=property_name,
@@ -166,12 +208,21 @@ def parse_airbnb_email(raw_bytes: bytes) -> AirbnbParsedEmail | None:
 # ---------------------------------------------------------------------------
 
 
+def _decode_header(raw: str) -> str:
+    """Decode a MIME-encoded email header (e.g. =?UTF-8?B?...?=) to plain text."""
+    parts = email.header.decode_header(raw)
+    decoded = str(email.header.make_header(parts))
+    return decoded
+
+
 def _extract_property_from_subject(subject: str) -> str:
     """Strip Airbnb subject prefix and trailing date range; return listing name.
 
     Returns empty string for subject patterns where the remainder is the
     guest name rather than a property name (e.g. "Message de Jordan").
     """
+    # Strip leading "Objet : " / "Objet\xa0: " (French "Subject:") if present
+    subject = _RE_SUBJECT_OBJET.sub("", subject)
     if _RE_SUBJECT_NO_PROPERTY.match(subject):
         return ""
     name = _RE_SUBJECT_PREFIX.sub("", subject).strip()
@@ -203,28 +254,47 @@ def _get_plain_body(msg: Message) -> str | None:
 
 def _extract_guest_name(soup: BeautifulSoup) -> str | None:
     """
-    Airbnb emails render the guest name as the first <strong> or <b> tag
-    in the message body section. Returns None if not found.
+    Airbnb inquiry emails render the guest name as the first <h2> tag,
+    followed by their role ("Responsable de la réservation").
     """
-    for tag in soup.find_all(["strong", "b"]):
+    for tag in soup.find_all("h2"):
         text = tag.get_text(strip=True)
-        # Exclude empty strings, multi-line blobs, and overly long strings
         if text and len(text) < 80 and "\n" not in text:
             return text
     return None
 
 
+def _extract_direction(soup: BeautifulSoup) -> str:
+    """Return 'outbound' if the first role label is Co-hôte/Hôte (host), else 'inbound'.
+
+    Checks only the first role-label paragraph — threads include quoted history
+    with the other party's role label, which must be ignored.
+    """
+    for tag in soup.find_all("p"):
+        text = tag.get_text(strip=True)
+        if _RE_ROLE_LABEL.match(text):
+            return "outbound" if _RE_ROLE_HOST.match(text) else "inbound"
+    return "inbound"
+
+
 def _extract_message_body(soup: BeautifulSoup) -> str:
     """
-    Collect all <p> text, then strip Airbnb boilerplate (safety warning +
-    auto-translation block). Returns clean plain text.
+    Collect all <p> text, strip role labels ("Responsable de la réservation",
+    "Co-hôte") and Airbnb boilerplate. Returns clean plain text.
     """
     paragraphs = [p.get_text(separator=" ", strip=True) for p in soup.find_all("p")]
-    raw = "\n\n".join(p for p in paragraphs if p)
+    # Drop role labels and bare punctuation-only paragraphs
+    filtered = [
+        p for p in paragraphs
+        if p and not _RE_ROLE_LABEL.match(p) and not re.fullmatch(r"[.\-–—\s]+", p)
+    ]
+    raw = "\n\n".join(filtered)
 
     for pattern in _BOILERPLATE_PATTERNS:
         raw = pattern.sub("", raw)
 
+    # Strip any stray leading punctuation left by boilerplate removal
+    raw = re.sub(r"^[.\-–—\s]+", "", raw)
     return raw.strip()
 
 

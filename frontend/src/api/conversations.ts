@@ -38,6 +38,7 @@ export async function getConversations(
   unreadOnly = false,
   search = "",
   platforms: string[] = [],
+  propertyIds: string[] = [],
 ): Promise<ConversationsPage> {
   const res = await client.get<ConversationsPage>("/conversations/", {
     params: {
@@ -46,6 +47,7 @@ export async function getConversations(
       ...(unreadOnly ? { unread_only: true } : {}),
       ...(search ? { search } : {}),
       ...(platforms.length > 0 ? { platform: platforms.join(",") } : {}),
+      ...(propertyIds.length > 0 ? { property_id: propertyIds.join(",") } : {}),
     },
   });
   return res.data;

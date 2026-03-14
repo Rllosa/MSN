@@ -1,4 +1,4 @@
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { ConversationSummary } from "../api/conversations";
 import ConversationItem from "./ConversationItem";
 
@@ -18,6 +18,7 @@ export default function ConversationList({
   onLoadMore,
 }: Props) {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   if (conversations.length === 0) {
     return (
@@ -47,7 +48,10 @@ export default function ConversationList({
           key={conv.id}
           conv={conv}
           selected={conv.id === selectedId}
-          onClick={() => navigate(`/inbox/${conv.id}`)}
+          onClick={() => {
+            const qs = searchParams.toString();
+            navigate(`/inbox/${conv.id}${qs ? `?${qs}` : ""}`);
+          }}
         />
       ))}
       {hasMore && (

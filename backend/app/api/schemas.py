@@ -50,6 +50,7 @@ class PropertyInfo(BaseModel):
     id: str
     name: str
     slug: str
+    beds24_property_id: int | None
     created_at: datetime
 
 
