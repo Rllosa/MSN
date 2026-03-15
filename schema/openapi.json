@@ -814,7 +814,7 @@
           "conversations"
         ],
         "summary": "Reply To Conversation",
-        "description": "Send an outbound reply to an Airbnb conversation.\n\nRouting:\n- guest_contact ends with @reply.airbnb.com \u2192 SMTP (pre-booking inquiry)\n- guest_contact is numeric                  \u2192 Beds24 API (confirmed booking)",
+        "description": "Send an outbound reply. Platform-aware routing:\n\n- guest_contact ends with @reply.airbnb.com \u2192 SMTP (pre-booking inquiry)\n- guest_contact is numeric                  \u2192 Beds24 API (confirmed booking)\n- platform == whatsapp                      \u2192 Meta Cloud API",
         "operationId": "reply_to_conversation_api_conversations__conv_id__reply_post",
         "security": [
           {

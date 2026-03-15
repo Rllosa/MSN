@@ -396,12 +396,10 @@ export default function InboxPage() {
               aptLabel={detailAptLabel}
               onSwitchConversation={switchToLinked}
             />
-            {detail.platform !== "whatsapp" && (
-              <ReplyComposer
-                conversationId={detail.id}
-                onSent={() => refreshDetail(detail.id)}
-              />
-            )}
+            <ReplyComposer
+              conversationId={detail.id}
+              onSent={() => refreshDetail(detail.id)}
+            />
           </>
         ) : (
           <div className="flex flex-col items-center justify-center h-full gap-3 text-zinc-600">

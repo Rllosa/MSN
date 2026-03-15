@@ -24,6 +24,7 @@ from sqlalchemy import text
 from app.auth.dependencies import CurrentUser
 from app.clients.beds24 import Beds24Client
 from app.clients.smtp import send_smtp_reply
+from app.clients.whatsapp import WhatsAppAPIError, WhatsAppClient
 from app.config import get_settings
 from app.db.session import SessionDep
 
@@ -449,11 +450,11 @@ async def reply_to_conversation(
     _: CurrentUser,
     session: SessionDep,
 ) -> MessageOut:
-    """Send an outbound reply to an Airbnb conversation.
+    """Send an outbound reply. Platform-aware routing:
 
-    Routing:
     - guest_contact ends with @reply.airbnb.com → SMTP (pre-booking inquiry)
     - guest_contact is numeric                  → Beds24 API (confirmed booking)
+    - platform == whatsapp                      → Meta Cloud API
     """
     row = (await session.execute(_SQL_CONV_FOR_REPLY, {"conv_id": conv_id})).fetchone()
     if not row:
@@ -462,7 +463,7 @@ async def reply_to_conversation(
     platform: str = row.platform
     guest_contact: str | None = row.guest_contact
 
-    if platform not in ("airbnb", "booking", "direct"):
+    if platform not in ("airbnb", "booking", "direct", "whatsapp"):
         raise HTTPException(
             http_status.HTTP_405_METHOD_NOT_ALLOWED,
             f"Reply not supported for platform '{platform}' via this endpoint",
@@ -470,7 +471,37 @@ async def reply_to_conversation(
 
     # --- Send via appropriate path (raises on failure; no DB write on error) ---
 
-    if guest_contact and guest_contact.endswith("@reply.airbnb.com"):
+    wamid: str | None = None
+
+    if platform == "whatsapp":
+        # WhatsApp: Meta Cloud API — guest_contact is E.164 without '+'
+        s = get_settings()
+        try:
+            async with httpx.AsyncClient(timeout=15) as http:
+                wa = WhatsAppClient(
+                    http,
+                    s.whatsapp_access_token,
+                    s.whatsapp_phone_number_id,
+                    s.whatsapp_api_version,
+                )
+                wamid = await wa.send_text(guest_contact or "", body.content)
+        except WhatsAppAPIError as exc:
+            logger.exception(
+                "reply.whatsapp_failed conv_id=%s status=%s body=%s",
+                conv_id,
+                exc.status_code,
+                exc.body,
+            )
+            raise HTTPException(
+                http_status.HTTP_502_BAD_GATEWAY, "Failed to send WhatsApp reply"
+            ) from exc
+        except Exception as exc:
+            logger.exception("reply.whatsapp_failed conv_id=%s err=%s", conv_id, exc)
+            raise HTTPException(
+                http_status.HTTP_502_BAD_GATEWAY, "Failed to send WhatsApp reply"
+            ) from exc
+
+    elif guest_contact and guest_contact.endswith("@reply.airbnb.com"):
         # Pre-booking inquiry: SMTP → Airbnb reply gateway
         try:
             await send_smtp_reply(guest_contact, body.content)
@@ -508,8 +539,12 @@ async def reply_to_conversation(
     msg_hash = hashlib.sha256(
         f"reply:{conv_id}:{sent_at.isoformat()}".encode()
     ).hexdigest()
-    is_smtp = "@reply" in (guest_contact or "")
-    raw_headers = json.dumps({"reply_path": "smtp" if is_smtp else "beds24"})
+    if platform == "whatsapp":
+        raw_headers = json.dumps({"reply_path": "whatsapp", "wamid": wamid})
+    elif guest_contact and guest_contact.endswith("@reply.airbnb.com"):
+        raw_headers = json.dumps({"reply_path": "smtp"})
+    else:
+        raw_headers = json.dumps({"reply_path": "beds24"})
 
     msg_row = (
         await session.execute(
@@ -535,9 +570,14 @@ async def reply_to_conversation(
 
     await _try_publish(conv_id, message_id, "outbound", body.content, sent_at)
 
-    logger.info(
-        "reply.sent conv_id=%s path=%s", conv_id, "smtp" if is_smtp else "beds24"
-    )
+    is_airbnb_email = (guest_contact or "").endswith("@reply.airbnb.com")
+    if platform == "whatsapp":
+        reply_path = "whatsapp"
+    elif is_airbnb_email:
+        reply_path = "smtp"
+    else:
+        reply_path = "beds24"
+    logger.info("reply.sent conv_id=%s path=%s", conv_id, reply_path)
 
     return MessageOut(
         id=message_id,
