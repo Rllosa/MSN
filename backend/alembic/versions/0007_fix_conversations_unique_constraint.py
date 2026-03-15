@@ -26,18 +26,17 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    # Drop the old (platform, guest_contact) unique constraint that allowed
-    # duplicates when the same contact appeared under multiple platforms.
-    op.drop_constraint(
-        "uq_conversations_platform_guest_contact",
-        "conversations",
-        type_="unique",
+    # Drop the old (platform, guest_contact) unique constraint if it exists.
+    # Use raw SQL so this is idempotent on DBs that never had the constraint.
+    op.execute(
+        "ALTER TABLE conversations"
+        " DROP CONSTRAINT IF EXISTS uq_conversations_platform_guest_contact"
     )
 
     # Create a partial unique index — NULL guest_contact rows are excluded so
     # multiple conversations without a contact are allowed (e.g. WhatsApp stubs).
     op.execute(
-        "CREATE UNIQUE INDEX uq_conversations_guest_contact"
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_conversations_guest_contact"
         " ON conversations (guest_contact)"
         " WHERE guest_contact IS NOT NULL"
     )

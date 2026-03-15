@@ -11,6 +11,7 @@ export interface ConversationSummary {
   unread_count: number;
   last_message_at: string | null;
   created_at: string;
+  linked_whatsapp_unread: number | null;
 }
 
 export interface MessageOut {
@@ -23,6 +24,8 @@ export interface MessageOut {
 
 export interface ConversationDetail extends ConversationSummary {
   messages: MessageOut[];
+  linked_conversation_id: string | null;
+  linked_conversation_unread: number | null;
 }
 
 export interface ConversationsPage {
