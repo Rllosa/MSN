@@ -214,15 +214,19 @@ async def test_get_properties_returns_property_list() -> None:
 
 
 @pytest.mark.asyncio
-async def test_post_message_sends_array_body() -> None:
-    """post_message() POSTs a JSON array with bookingId and message."""
+async def test_post_message_sends_array_body_and_returns_id() -> None:
+    """post_message() POSTs a JSON array and returns the new Beds24 message ID."""
     http = _mock_http()
-    http.post.return_value = _resp({"success": True}, status_code=200)
+    http.post.return_value = _resp(
+        [{"success": True, "new": {"id": 99001, "bookingId": 12345, "source": "host"}}],
+        status_code=200,
+    )
     client = Beds24Client(http)
     client._access_token = "access-abc"
 
-    await client.post_message(12345, "Hello guest!")
+    msg_id = await client.post_message(12345, "Hello guest!")
 
+    assert msg_id == 99001
     call_kwargs = http.post.call_args
     assert "bookings/messages" in call_kwargs.args[0]
     body = call_kwargs.kwargs["json"]

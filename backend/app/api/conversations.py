@@ -472,6 +472,7 @@ async def reply_to_conversation(
     # --- Send via appropriate path (raises on failure; no DB write on error) ---
 
     wamid: str | None = None
+    beds24_msg_id: int | None = None
 
     if platform == "whatsapp":
         # WhatsApp: Meta Cloud API — guest_contact is E.164 without '+'
@@ -521,7 +522,7 @@ async def reply_to_conversation(
             async with httpx.AsyncClient(timeout=30) as http:
                 client = Beds24Client(http)
                 await client.authenticate(refresh_token)
-                await client.post_message(booking_id, body.content)
+                beds24_msg_id = await client.post_message(booking_id, body.content)
         except Exception as exc:
             logger.exception("reply.beds24_failed conv_id=%s err=%s", conv_id, exc)
             raise HTTPException(
@@ -536,15 +537,23 @@ async def reply_to_conversation(
 
     # --- Persist outbound message row ---
     sent_at = datetime.now(UTC)
-    msg_hash = hashlib.sha256(
-        f"reply:{conv_id}:{sent_at.isoformat()}".encode()
-    ).hexdigest()
-    if platform == "whatsapp":
+    if beds24_msg_id is not None:
+        # Use the Beds24 message ID as hash so the polling worker deduplicates
+        # correctly when it later fetches the same host message.
+        msg_hash = hashlib.sha256(str(beds24_msg_id).encode()).hexdigest()
+        raw_headers = json.dumps(
+            {"reply_path": "beds24", "beds24_message_id": beds24_msg_id}
+        )
+    elif platform == "whatsapp":
+        msg_hash = hashlib.sha256(
+            f"reply:{conv_id}:{sent_at.isoformat()}".encode()
+        ).hexdigest()
         raw_headers = json.dumps({"reply_path": "whatsapp", "wamid": wamid})
-    elif guest_contact and guest_contact.endswith("@reply.airbnb.com"):
-        raw_headers = json.dumps({"reply_path": "smtp"})
     else:
-        raw_headers = json.dumps({"reply_path": "beds24"})
+        msg_hash = hashlib.sha256(
+            f"reply:{conv_id}:{sent_at.isoformat()}".encode()
+        ).hexdigest()
+        raw_headers = json.dumps({"reply_path": "smtp"})
 
     msg_row = (
         await session.execute(

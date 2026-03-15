@@ -190,6 +190,7 @@ async def test_reply_beds24_path(ac: AsyncClient, token: str) -> None:
         patch(
             "app.api.conversations.Beds24Client.post_message",
             new_callable=AsyncMock,
+            return_value=99001,
         ) as mock_post,
     ):
         resp = await ac.post(
@@ -283,6 +284,7 @@ async def test_reply_booking_beds24_path(ac: AsyncClient, token: str) -> None:
         patch(
             "app.api.conversations.Beds24Client.post_message",
             new_callable=AsyncMock,
+            return_value=99002,
         ) as mock_post,
     ):
         resp = await ac.post(
