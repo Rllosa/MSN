@@ -1035,12 +1035,45 @@
             "format": "date-time",
             "title": "Created At"
           },
+          "linked_whatsapp_unread": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linked Whatsapp Unread"
+          },
           "messages": {
             "items": {
               "$ref": "#/components/schemas/MessageOut"
             },
             "type": "array",
             "title": "Messages"
+          },
+          "linked_conversation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linked Conversation Id"
+          },
+          "linked_conversation_unread": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linked Conversation Unread"
           }
         },
         "type": "object",
@@ -1130,6 +1163,17 @@
             "type": "string",
             "format": "date-time",
             "title": "Created At"
+          },
+          "linked_whatsapp_unread": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linked Whatsapp Unread"
           }
         },
         "type": "object",
