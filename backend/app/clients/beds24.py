@@ -150,8 +150,11 @@ class Beds24Client:
     # Replies
     # ------------------------------------------------------------------
 
-    async def post_message(self, booking_id: int, message: str) -> None:
-        """Send a reply to a guest via Beds24 POST /bookings/messages."""
+    async def post_message(self, booking_id: int, message: str) -> int:
+        """Send a reply to a guest via Beds24 POST /bookings/messages.
+
+        Returns the Beds24 message ID of the newly created message.
+        """
         resp = await self._http.post(
             f"{BEDS24_BASE}/bookings/messages",
             headers=self._auth_headers(),
@@ -165,6 +168,7 @@ class Beds24Client:
                 resp.text,
             )
         resp.raise_for_status()
+        return int(resp.json()[0]["new"]["id"])
 
     # ------------------------------------------------------------------
     # Internal

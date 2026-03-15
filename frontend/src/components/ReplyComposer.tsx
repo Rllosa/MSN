@@ -31,7 +31,7 @@ export default function ReplyComposer({ conversationId, onSent }: Props) {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+    if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();
     }
@@ -46,7 +46,7 @@ export default function ReplyComposer({ conversationId, onSent }: Props) {
           value={content}
           onChange={(e) => setContent(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Write a reply… (⌘↵ to send)"
+          placeholder="Write a reply… (↵ to send, ⇧↵ for new line)"
           rows={3}
           className="flex-1 resize-none bg-zinc-800 text-sm text-white placeholder-zinc-500 rounded-xl px-3 py-2.5 outline-none focus:ring-1 focus:ring-blue-600 leading-relaxed"
         />
@@ -54,7 +54,7 @@ export default function ReplyComposer({ conversationId, onSent }: Props) {
           onClick={handleSend}
           disabled={!canSend}
           className="shrink-0 flex items-center justify-center w-9 h-9 rounded-xl bg-blue-600 text-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-blue-500 transition-colors"
-          title="Send (⌘↵)"
+          title="Send (↵)"
         >
           {sending ? (
             <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
