@@ -55,10 +55,13 @@ class ConversationSummary(BaseModel):
     unread_count: int
     last_message_at: datetime | None
     created_at: datetime
+    linked_whatsapp_unread: int | None = None
 
 
 class ConversationDetail(ConversationSummary):
     messages: list[MessageOut]
+    linked_conversation_id: str | None = None
+    linked_conversation_unread: int | None = None
 
 
 class ConversationsPage(BaseModel):
@@ -98,7 +101,12 @@ _CONV_SELECT = """\
         c.status,
         c.unread_count,
         c.last_message_at,
-        c.created_at
+        c.created_at,
+        (SELECT wa.unread_count FROM conversations wa
+         WHERE wa.guest_phone = c.guest_phone
+           AND wa.platform = 'whatsapp'
+           AND c.guest_phone IS NOT NULL
+         LIMIT 1) AS linked_whatsapp_unread
     FROM conversations c
     LEFT JOIN properties p ON c.property_id = p.id"""
 
@@ -155,6 +163,16 @@ _SQL_UPDATE_STATUS = text(
 )
 
 _SQL_CONV_EXISTS = text("SELECT id FROM conversations WHERE id = :conv_id")
+
+_SQL_LINKED_CONV = text(
+    "SELECT id::text, unread_count FROM conversations"
+    " WHERE guest_phone = ("
+    "   SELECT guest_phone FROM conversations WHERE id = :conv_id"
+    " )"
+    " AND guest_phone IS NOT NULL"
+    " AND id != :conv_id"
+    " LIMIT 1"
+)
 
 _SQL_CONV_FOR_REPLY = text(
     "SELECT platform::text, guest_contact FROM conversations WHERE id = :conv_id"
@@ -228,6 +246,17 @@ def _build_where(
     if unread_only:
         clauses.append("c.unread_count > 0")
 
+    # Hide WhatsApp conversations that are already linked to a booking/airbnb
+    # conversation — they are accessible via the toggle button in that thread.
+    clauses.append(
+        "NOT (c.platform = 'whatsapp' AND c.guest_phone IS NOT NULL AND EXISTS ("
+        "  SELECT 1 FROM conversations linked"
+        "  WHERE linked.guest_phone = c.guest_phone"
+        "  AND linked.platform != 'whatsapp'"
+        "  AND linked.id != c.id"
+        "))"
+    )
+
     where = "WHERE " + " AND ".join(clauses) if clauses else ""
     return where, params
 
@@ -249,6 +278,11 @@ def _to_summary(row) -> ConversationSummary:  # type: ignore[no-untyped-def]
         unread_count=row.unread_count,
         last_message_at=row.last_message_at,
         created_at=row.created_at,
+        linked_whatsapp_unread=(
+            row.linked_whatsapp_unread
+            if hasattr(row, "linked_whatsapp_unread")
+            else None
+        ),
     )
 
 
@@ -335,7 +369,18 @@ async def get_conversation(
     ).fetchall()
     messages = [_to_message(m) for m in msg_rows]
 
-    return ConversationDetail(**_to_summary(row).model_dump(), messages=messages)
+    linked_row = (
+        await session.execute(_SQL_LINKED_CONV, {"conv_id": conv_id})
+    ).fetchone()
+    linked_conversation_id = str(linked_row[0]) if linked_row else None
+    linked_conversation_unread = int(linked_row[1]) if linked_row else None
+
+    return ConversationDetail(
+        **_to_summary(row).model_dump(),
+        messages=messages,
+        linked_conversation_id=linked_conversation_id,
+        linked_conversation_unread=linked_conversation_unread,
+    )
 
 
 @router.patch("/{conv_id}", response_model=ConversationSummary)

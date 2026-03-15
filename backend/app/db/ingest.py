@@ -145,6 +145,7 @@ _SQL_CONV_BY_GUEST_CONTACT = text(
 # Airbnb listing subjects sometimes use "AptN" instead of the property name.
 # Map apt number to Beds24 property ID for fallback lookup.
 _RE_APT_LABEL = re.compile(r"^Apt(\d)\b", re.IGNORECASE)
+_RE_NON_DIGITS = re.compile(r"\D+")
 _APT_NUM_TO_BEDS24_ID: dict[int, int] = {
     1: 314537,
     2: 314539,
@@ -157,10 +158,10 @@ _APT_NUM_TO_BEDS24_ID: dict[int, int] = {
 
 _SQL_UPSERT_CONVERSATION = text(
     """
-    INSERT INTO conversations (platform, guest_name, guest_contact, property_id,
-                               last_message_at, created_at, updated_at)
-    VALUES (:platform, :guest_name, :guest_contact, :property_id,
-            :sent_at, NOW(), NOW())
+    INSERT INTO conversations (platform, guest_name, guest_contact, guest_phone,
+                               property_id, last_message_at, created_at, updated_at)
+    VALUES (:platform, :guest_name, :guest_contact, :guest_phone,
+            :property_id, :sent_at, NOW(), NOW())
     ON CONFLICT (guest_contact) WHERE guest_contact IS NOT NULL DO UPDATE
         SET platform     = CASE
                 WHEN EXCLUDED.platform NOT IN ('booking', 'direct')
@@ -172,6 +173,7 @@ _SQL_UPSERT_CONVERSATION = text(
                 THEN EXCLUDED.guest_name
                 ELSE conversations.guest_name
             END,
+            guest_phone  = COALESCE(EXCLUDED.guest_phone, conversations.guest_phone),
             property_id  = COALESCE(EXCLUDED.property_id, conversations.property_id),
             last_message_at = GREATEST(
                 conversations.last_message_at, EXCLUDED.last_message_at
@@ -179,6 +181,26 @@ _SQL_UPSERT_CONVERSATION = text(
             updated_at   = NOW()
     RETURNING id
     """
+)
+
+_SQL_CONV_BY_GUEST_PHONE = text(
+    "SELECT id FROM conversations WHERE guest_phone = :guest_phone LIMIT 1"
+)
+
+_SQL_LINKED_BOOKING_CONV = text(
+    "SELECT id FROM conversations"
+    " WHERE guest_phone = :phone AND platform != 'whatsapp' AND id != :conv_id"
+    " LIMIT 1"
+)
+
+_SQL_COPY_PROPERTY_FROM_LINKED = text(
+    "UPDATE conversations"
+    " SET property_id = ("
+    "   SELECT property_id FROM conversations"
+    "   WHERE guest_phone = :phone AND id != :conv_id AND property_id IS NOT NULL"
+    "   LIMIT 1"
+    " ), updated_at = NOW()"
+    " WHERE id = :conv_id AND property_id IS NULL"
 )
 
 _SQL_INCREMENT_UNREAD = text(
@@ -207,6 +229,18 @@ _SQL_INSERT_MESSAGE = text(
 def compute_hash(value: str) -> str:
     """Return SHA-256 hex digest of *value* — deterministic, collision-resistant."""
     return hashlib.sha256(value.encode()).hexdigest()
+
+
+def normalize_phone(raw: str | None) -> str | None:
+    """Strip all non-digit characters from a phone number.
+
+    '+1 267 394 2729' → '12672394729'
+    Returns None if the result is empty.
+    """
+    if not raw:
+        return None
+    digits = _RE_NON_DIGITS.sub("", raw)
+    return digits or None
 
 
 async def ingest_airbnb_email(
@@ -284,6 +318,7 @@ async def ingest_airbnb_email(
                     "platform": "airbnb",
                     "guest_name": parsed.guest_name,
                     "guest_contact": parsed.reply_to,
+                    "guest_phone": None,
                     "property_id": property_id,
                     "sent_at": sent_at,
                 },
@@ -384,12 +419,15 @@ async def ingest_beds24_message(
     except (ValueError, AttributeError):
         sent_at = datetime.now(UTC)
 
+    guest_phone = normalize_phone(booking.get("phone") or booking.get("mobile"))
+
     conv_result = await session.execute(
         _SQL_UPSERT_CONVERSATION,
         {
             "platform": platform,
             "guest_name": guest_name,
             "guest_contact": str(booking_id),
+            "guest_phone": guest_phone,
             "property_id": property_id,
             "sent_at": sent_at,
         },
@@ -463,17 +501,27 @@ async def ingest_whatsapp_message(
     Returns True if a new message row was inserted, False if deduplicated.
     `wamid` is Meta's globally unique message ID and serves as the dedup key.
     """
+    # Always upsert a dedicated WhatsApp conversation keyed by phone number.
+    # The booking conversation (also having guest_phone set) is linked via the
+    # linked_conversation_id field returned by GET /conversations/{id}, which
+    # powers the toggle button in the UI.
     conv_result = await session.execute(
         _SQL_UPSERT_CONVERSATION,
         {
             "platform": "whatsapp",
             "guest_name": guest_name,
-            "guest_contact": phone,  # E.164 without '+'; partial-unique-index dedup key
-            "property_id": None,  # no booking context; staff can tag later
+            "guest_contact": phone,  # E.164 without '+'; dedup key
+            "guest_phone": phone,
+            "property_id": None,
             "sent_at": sent_at,
         },
     )
     conversation_id = str(conv_result.scalar_one())
+
+    # Inherit property from the linked booking conversation if available.
+    await session.execute(
+        _SQL_COPY_PROPERTY_FROM_LINKED, {"phone": phone, "conv_id": conversation_id}
+    )
 
     message_hash = compute_hash(wamid)
     raw_headers = json.dumps(
@@ -494,9 +542,21 @@ async def ingest_whatsapp_message(
     row = msg_result.fetchone()
     inserted = row is not None and bool(row[1])
 
+    linked_booking_id: str | None = None
     if inserted:
         message_id = str(row[0])
         await session.execute(_SQL_INCREMENT_UNREAD, {"conv_id": conversation_id})
+        # Also increment unread on the linked booking conversation so it surfaces
+        # in the inbox list (the WhatsApp conversation is hidden when linked).
+        linked_row = (
+            await session.execute(
+                _SQL_LINKED_BOOKING_CONV,
+                {"phone": phone, "conv_id": conversation_id},
+            )
+        ).fetchone()
+        if linked_row:
+            linked_booking_id = str(linked_row[0])
+            await session.execute(_SQL_INCREMENT_UNREAD, {"conv_id": linked_booking_id})
 
     await session.commit()
 
@@ -506,7 +566,9 @@ async def ingest_whatsapp_message(
             conversation_id,
             message_hash[:12],
         )
-        await _try_publish(conversation_id, message_id, "inbound", body, sent_at)
+        # Push WS event on the booking conversation so the inbox badge updates.
+        notify_id = linked_booking_id or conversation_id
+        await _try_publish(notify_id, message_id, "inbound", body, sent_at)
     else:
         logger.debug(
             "ingest.whatsapp.duplicate hash=%s conv_id=%s",

@@ -66,6 +66,8 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+    environment:
+      API_TARGET: http://backend:8000
     ports:
       - "5173:5173"
     volumes:

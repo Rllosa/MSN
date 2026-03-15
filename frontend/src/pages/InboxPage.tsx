@@ -115,6 +115,25 @@ export default function InboxPage() {
     }
   }, []);
 
+  // Switch to a linked conversation (e.g. WhatsApp ↔ booking toggle).
+  // Marks both the target and the current conversation as read, then refreshes.
+  const switchToLinked = useCallback(
+    async (convId: string) => {
+      await Promise.allSettled([
+        markConversationRead(convId),
+        conversationId ? markConversationRead(conversationId) : Promise.resolve(),
+      ]);
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === conversationId || c.id === convId ? { ...c, unread_count: 0 } : c,
+        ),
+      );
+      await refreshDetail(convId);
+      fetchList(true).catch(() => {});
+    },
+    [conversationId, refreshDetail, fetchList],
+  );
+
   // WebSocket: on new_message → refresh list + detail if it's the open conv
   useInboxSocket((convId) => {
     fetchList(true).catch(() => {});
@@ -169,6 +188,9 @@ export default function InboxPage() {
     getConversation(conversationId)
       .then((d) => {
         setDetail(d);
+        // Mark this conversation's own messages as read.
+        // The badge will drop to just the linked WhatsApp unread count
+        // (if any) until the user clicks the WhatsApp toggle.
         if (d.unread_count > 0) {
           markConversationRead(conversationId).then(() => {
             setConversations((prev) =>
@@ -369,7 +391,11 @@ export default function InboxPage() {
           </div>
         ) : detail ? (
           <>
-            <MessageThread conversation={detail} aptLabel={detailAptLabel} />
+            <MessageThread
+              conversation={detail}
+              aptLabel={detailAptLabel}
+              onSwitchConversation={switchToLinked}
+            />
             {detail.platform !== "whatsapp" && (
               <ReplyComposer
                 conversationId={detail.id}

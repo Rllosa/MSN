@@ -74,11 +74,14 @@ export default function ConversationItem({ conv, selected, onClick }: Props) {
               </div>
             );
           })()}
-          {conv.unread_count > 0 && (
-            <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-blue-600 text-white text-[10px] font-bold">
-              {conv.unread_count > 99 ? "99+" : conv.unread_count}
-            </span>
-          )}
+          {(() => {
+            const total = conv.unread_count + (conv.linked_whatsapp_unread ?? 0);
+            return total > 0 ? (
+              <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-blue-600 text-white text-[10px] font-bold">
+                {total > 99 ? "99+" : total}
+              </span>
+            ) : null;
+          })()}
         </div>
       </div>
       <div className="flex items-center gap-2 pl-[42px]">
@@ -86,6 +89,11 @@ export default function ConversationItem({ conv, selected, onClick }: Props) {
         {conv.guest_contact?.endsWith("@reply.airbnb.com") && (
           <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 shrink-0">
             Inquiry
+          </span>
+        )}
+        {conv.linked_whatsapp_unread !== null && (
+          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-[#25D366]/15 text-[#25D366] shrink-0">
+            WhatsApp
           </span>
         )}
         {conv.property_name && (
