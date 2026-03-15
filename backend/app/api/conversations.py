@@ -278,7 +278,11 @@ def _to_summary(row) -> ConversationSummary:  # type: ignore[no-untyped-def]
         unread_count=row.unread_count,
         last_message_at=row.last_message_at,
         created_at=row.created_at,
-        linked_whatsapp_unread=row.linked_whatsapp_unread if hasattr(row, "linked_whatsapp_unread") else None,
+        linked_whatsapp_unread=(
+            row.linked_whatsapp_unread
+            if hasattr(row, "linked_whatsapp_unread")
+            else None
+        ),
     )
 
 

@@ -86,7 +86,10 @@ function ImageAttachment({ src }: { src: string }) {
   );
 }
 
-const PLATFORM_SWITCH_STYLE: Record<string, { bg: string; label: string; icon: JSX.Element }> = {
+const PLATFORM_SWITCH_STYLE: Record<
+  string,
+  { bg: string; label: string; icon: JSX.Element }
+> = {
   whatsapp: {
     bg: "bg-[#25D366]",
     label: "WhatsApp",
@@ -117,7 +120,11 @@ const PLATFORM_SWITCH_STYLE: Record<string, { bg: string; label: string; icon: J
   },
 };
 
-export default function MessageThread({ conversation, aptLabel, onSwitchConversation }: Props) {
+export default function MessageThread({
+  conversation,
+  aptLabel,
+  onSwitchConversation,
+}: Props) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -128,30 +135,36 @@ export default function MessageThread({ conversation, aptLabel, onSwitchConversa
     <div className="flex flex-col flex-1 min-h-0 bg-[#0f0f0f]">
       {/* Header */}
       <div className="px-6 py-4 bg-[#1a1a1a] border-b border-white/10 shrink-0 relative">
-        {conversation.linked_conversation_id && onSwitchConversation && (() => {
-          const targetPlatform = conversation.platform === "whatsapp" ? "booking" : "whatsapp";
-          const style = PLATFORM_SWITCH_STYLE[targetPlatform] ?? PLATFORM_SWITCH_STYLE.whatsapp;
-          const hasUnread = (conversation.linked_conversation_unread ?? 0) > 0;
-          return (
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div className="relative pointer-events-auto">
-                <button
-                  onClick={() => onSwitchConversation(conversation.linked_conversation_id!)}
-                  className={`flex items-center gap-2 px-5 py-2 rounded-full text-sm font-semibold text-white transition-opacity hover:opacity-80 ${style.bg}`}
-                  title={`Switch to ${style.label} thread`}
-                >
-                  {style.icon}
-                  {style.label} thread
-                </button>
-                {hasUnread && (
-                  <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1">
-                    {conversation.linked_conversation_unread}
-                  </span>
-                )}
+        {conversation.linked_conversation_id &&
+          onSwitchConversation &&
+          (() => {
+            const targetPlatform =
+              conversation.platform === "whatsapp" ? "booking" : "whatsapp";
+            const style =
+              PLATFORM_SWITCH_STYLE[targetPlatform] ?? PLATFORM_SWITCH_STYLE.whatsapp;
+            const hasUnread = (conversation.linked_conversation_unread ?? 0) > 0;
+            return (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div className="relative pointer-events-auto">
+                  <button
+                    onClick={() =>
+                      onSwitchConversation(conversation.linked_conversation_id!)
+                    }
+                    className={`flex items-center gap-2 px-5 py-2 rounded-full text-sm font-semibold text-white transition-opacity hover:opacity-80 ${style.bg}`}
+                    title={`Switch to ${style.label} thread`}
+                  >
+                    {style.icon}
+                    {style.label} thread
+                  </button>
+                  {hasUnread && (
+                    <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1">
+                      {conversation.linked_conversation_unread}
+                    </span>
+                  )}
+                </div>
               </div>
-            </div>
-          );
-        })()}
+            );
+          })()}
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-full bg-zinc-700 text-white flex items-center justify-center font-bold text-sm shrink-0">
             {conversation.guest_name.charAt(0).toUpperCase()}

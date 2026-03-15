@@ -117,21 +117,22 @@ export default function InboxPage() {
 
   // Switch to a linked conversation (e.g. WhatsApp ↔ booking toggle).
   // Marks both the target and the current conversation as read, then refreshes.
-  const switchToLinked = useCallback(async (convId: string) => {
-    await Promise.allSettled([
-      markConversationRead(convId),
-      conversationId ? markConversationRead(conversationId) : Promise.resolve(),
-    ]);
-    setConversations((prev) =>
-      prev.map((c) =>
-        c.id === conversationId || c.id === convId
-          ? { ...c, unread_count: 0 }
-          : c,
-      ),
-    );
-    await refreshDetail(convId);
-    fetchList(true).catch(() => {});
-  }, [conversationId, refreshDetail, fetchList]);
+  const switchToLinked = useCallback(
+    async (convId: string) => {
+      await Promise.allSettled([
+        markConversationRead(convId),
+        conversationId ? markConversationRead(conversationId) : Promise.resolve(),
+      ]);
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === conversationId || c.id === convId ? { ...c, unread_count: 0 } : c,
+        ),
+      );
+      await refreshDetail(convId);
+      fetchList(true).catch(() => {});
+    },
+    [conversationId, refreshDetail, fetchList],
+  );
 
   // WebSocket: on new_message → refresh list + detail if it's the open conv
   useInboxSocket((convId) => {
