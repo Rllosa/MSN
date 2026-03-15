@@ -556,9 +556,7 @@ async def ingest_whatsapp_message(
         ).fetchone()
         if linked_row:
             linked_booking_id = str(linked_row[0])
-            await session.execute(
-                _SQL_INCREMENT_UNREAD, {"conv_id": linked_booking_id}
-            )
+            await session.execute(_SQL_INCREMENT_UNREAD, {"conv_id": linked_booking_id})
 
     await session.commit()
 

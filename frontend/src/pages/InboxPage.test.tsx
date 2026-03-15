@@ -21,6 +21,7 @@ const CONV_1 = {
   unread_count: 2,
   last_message_at: "2024-06-01T10:00:00Z",
   created_at: "2024-06-01T09:00:00Z",
+  linked_whatsapp_unread: null,
 };
 
 const DETAIL_1 = {
@@ -34,6 +35,8 @@ const DETAIL_1 = {
       created_at: "2024-06-01T10:00:00Z",
     },
   ],
+  linked_conversation_id: null,
+  linked_conversation_unread: null,
 };
 
 beforeEach(() => {
