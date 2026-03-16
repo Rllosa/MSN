@@ -444,7 +444,8 @@ async def ingest_beds24_message(
         }
     )
     direction = "outbound" if msg.get("source") == "host" else "inbound"
-    body = await _cache_images(msg.get("message", ""))
+    raw_body = msg.get("message", "")
+    body = await _cache_images(raw_body)
     msg_result = await session.execute(
         _SQL_INSERT_MESSAGE,
         {

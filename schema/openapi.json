@@ -814,7 +814,7 @@
           "conversations"
         ],
         "summary": "Reply To Conversation",
-        "description": "Send an outbound reply. Platform-aware routing:\n\n- guest_contact ends with @reply.airbnb.com \u2192 SMTP (pre-booking inquiry)\n- guest_contact is numeric                  \u2192 Beds24 API (confirmed booking)\n- platform == whatsapp                      \u2192 Meta Cloud API",
+        "description": "Send an outbound reply. Accepts JSON (text-only) or multipart (with image).\n\nPlatform routing:\n- guest_contact ends with @reply.airbnb.com \u2192 SMTP (pre-booking inquiry)\n- guest_contact is numeric                  \u2192 Beds24 API (confirmed booking)\n- platform == whatsapp                      \u2192 Meta Cloud API",
         "operationId": "reply_to_conversation_api_conversations__conv_id__reply_post",
         "security": [
           {
@@ -832,16 +832,6 @@
             }
           }
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ReplyRequest"
-              }
-            }
-          }
-        },
         "responses": {
           "201": {
             "description": "Successful Response",
@@ -1441,21 +1431,6 @@
           "created_at"
         ],
         "title": "PropertyInfo"
-      },
-      "ReplyRequest": {
-        "properties": {
-          "content": {
-            "type": "string",
-            "maxLength": 4000,
-            "minLength": 1,
-            "title": "Content"
-          }
-        },
-        "type": "object",
-        "required": [
-          "content"
-        ],
-        "title": "ReplyRequest"
       },
       "TokenResponse": {
         "properties": {

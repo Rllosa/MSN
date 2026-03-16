@@ -17,6 +17,7 @@ Reference: https://beds24.com/api/v2
 
 from __future__ import annotations
 
+import base64
 import logging
 
 import httpx
@@ -150,15 +151,28 @@ class Beds24Client:
     # Replies
     # ------------------------------------------------------------------
 
-    async def post_message(self, booking_id: int, message: str) -> int:
+    async def post_message(
+        self,
+        booking_id: int,
+        message: str,
+        attachment: bytes | None = None,
+        attachment_name: str | None = None,
+        attachment_mime_type: str | None = None,
+    ) -> int:
         """Send a reply to a guest via Beds24 POST /bookings/messages.
 
+        Optionally includes a binary attachment (base64-encoded for the API).
         Returns the Beds24 message ID of the newly created message.
         """
+        payload: dict = {"bookingId": booking_id, "message": message}
+        if attachment is not None and attachment_name and attachment_mime_type:
+            payload["attachment"] = base64.b64encode(attachment).decode()
+            payload["attachmentName"] = attachment_name
+            payload["attachmentMimeType"] = attachment_mime_type
         resp = await self._http.post(
             f"{BEDS24_BASE}/bookings/messages",
             headers=self._auth_headers(),
-            json=[{"bookingId": booking_id, "message": message}],
+            json=[payload],
         )
         if not resp.is_success:
             logger.error(

@@ -65,7 +65,19 @@ export async function markConversationRead(id: string): Promise<void> {
   await client.patch(`/conversations/${id}`, { mark_read: true });
 }
 
-export async function postReply(convId: string, content: string): Promise<MessageOut> {
+export async function postReply(
+  convId: string,
+  content: string,
+  file?: File,
+): Promise<MessageOut> {
+  if (file) {
+    const form = new FormData();
+    if (content) form.append("content", content);
+    form.append("file", file);
+    // Let axios set Content-Type with the correct multipart boundary
+    const res = await client.post<MessageOut>(`/conversations/${convId}/reply`, form);
+    return res.data;
+  }
   const res = await client.post<MessageOut>(`/conversations/${convId}/reply`, {
     content,
   });

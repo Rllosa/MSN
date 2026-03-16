@@ -200,7 +200,13 @@ async def test_reply_beds24_path(ac: AsyncClient, token: str) -> None:
         )
 
     assert resp.status_code == 201
-    mock_post.assert_awaited_once_with(82940750, _REPLY_BODY["content"])
+    mock_post.assert_awaited_once_with(
+        82940750,
+        message=_REPLY_BODY["content"],
+        attachment=None,
+        attachment_name=None,
+        attachment_mime_type=None,
+    )
     assert resp.json()["direction"] == "outbound"
 
 
@@ -294,4 +300,10 @@ async def test_reply_booking_beds24_path(ac: AsyncClient, token: str) -> None:
         )
 
     assert resp.status_code == 201
-    mock_post.assert_awaited_once_with(82940752, _REPLY_BODY["content"])
+    mock_post.assert_awaited_once_with(
+        82940752,
+        message=_REPLY_BODY["content"],
+        attachment=None,
+        attachment_name=None,
+        attachment_mime_type=None,
+    )
