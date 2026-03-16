@@ -19,9 +19,9 @@ from typing import Annotated, Literal
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi import status as http_status
-from starlette.datastructures import UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy import text
+from starlette.datastructures import UploadFile
 
 from app.auth.dependencies import CurrentUser
 from app.clients.beds24 import Beds24Client

@@ -75,10 +75,7 @@ export async function postReply(
     if (content) form.append("content", content);
     form.append("file", file);
     // Let axios set Content-Type with the correct multipart boundary
-    const res = await client.post<MessageOut>(
-      `/conversations/${convId}/reply`,
-      form,
-    );
+    const res = await client.post<MessageOut>(`/conversations/${convId}/reply`, form);
     return res.data;
   }
   const res = await client.post<MessageOut>(`/conversations/${convId}/reply`, {
