@@ -19,6 +19,10 @@ export default defineConfig({
         changeOrigin: true,
         ws: true,
       },
+      "/media": {
+        target: process.env.API_TARGET ?? "http://localhost:8000",
+        changeOrigin: true,
+      },
     },
   },
   test: {

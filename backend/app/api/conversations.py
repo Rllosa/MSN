@@ -13,11 +13,13 @@ import hashlib
 import json
 import logging
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Annotated, Literal
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi import status as http_status
+from starlette.datastructures import UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
@@ -31,6 +33,20 @@ from app.db.session import SessionDep
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
+
+# ---------------------------------------------------------------------------
+# Attachment constants (Rule 16.5 — hoisted at module load)
+# ---------------------------------------------------------------------------
+_ATTACHMENTS_DIR = Path(__file__).parent.parent.parent / "media" / "attachments"
+_ATTACHMENTS_DIR.mkdir(parents=True, exist_ok=True)
+_MAX_FILE_BYTES = 5 * 1024 * 1024  # 5 MB — WhatsApp hard limit
+_ALLOWED_MIME_TYPES = frozenset({"image/jpeg", "image/png", "image/webp", "image/gif"})
+_MIME_TO_EXT: dict[str, str] = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+    "image/gif": ".gif",
+}
 
 # ---------------------------------------------------------------------------
 # Pydantic schemas
@@ -84,6 +100,25 @@ class PatchConversationRequest(BaseModel):
 
 class ReplyRequest(BaseModel):
     content: str = Field(min_length=1, max_length=4000)
+
+
+# Parsed result of the reply request body (multipart or JSON)
+class _ReplyPayload:
+    __slots__ = ("content", "file_bytes", "file_name", "file_mime", "saved_path")
+
+    def __init__(
+        self,
+        content: str | None,
+        file_bytes: bytes | None,
+        file_name: str | None,
+        file_mime: str | None,
+        saved_path: Path | None,
+    ) -> None:
+        self.content = content
+        self.file_bytes = file_bytes
+        self.file_name = file_name
+        self.file_mime = file_mime
+        self.saved_path = saved_path
 
 
 # ---------------------------------------------------------------------------
@@ -298,6 +333,72 @@ def _to_message(row) -> MessageOut:  # type: ignore[no-untyped-def]
 
 
 # ---------------------------------------------------------------------------
+# Reply request parser — handles both JSON (text-only) and multipart (with file)
+# ---------------------------------------------------------------------------
+
+
+async def _parse_reply_request(request: Request) -> _ReplyPayload:
+    """Parse content + optional file from JSON or multipart/form-data body.
+
+    Saves the file locally on success; caller must delete it on send failure.
+    Raises HTTPException 422 on validation errors.
+    """
+    content_type = request.headers.get("content-type", "")
+    content: str | None = None
+    file_bytes: bytes | None = None
+    file_name: str | None = None
+    file_mime: str | None = None
+    saved_path: Path | None = None
+
+    if "multipart/form-data" in content_type:
+        form = await request.form()
+        raw_content = form.get("content")
+        content = str(raw_content).strip() or None if raw_content else None
+
+        upload = form.get("file")
+        if upload is not None and isinstance(upload, UploadFile):
+            file_mime = upload.content_type or ""
+            if file_mime not in _ALLOWED_MIME_TYPES:
+                raise HTTPException(
+                    http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    f"Unsupported file type '{file_mime}'."
+                    " Allowed: JPEG, PNG, WEBP, GIF",
+                )
+            file_bytes = await upload.read()
+            if len(file_bytes) > _MAX_FILE_BYTES:
+                raise HTTPException(
+                    http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    "File too large (max 5 MB)",
+                )
+            ext = _MIME_TO_EXT[file_mime]
+            file_name = upload.filename or f"attachment{ext}"
+            url_hash = hashlib.sha256(file_bytes).hexdigest()[:24]
+            saved_path = _ATTACHMENTS_DIR / f"{url_hash}{ext}"
+            if not saved_path.exists():
+                saved_path.write_bytes(file_bytes)
+    elif "application/x-www-form-urlencoded" in content_type:
+        form = await request.form()
+        raw_content = form.get("content")
+        content = str(raw_content).strip() or None if raw_content else None
+    else:
+        json_body = await request.json()
+        content = (json_body.get("content") or "").strip() or None
+
+    if not content and file_bytes is None:
+        raise HTTPException(
+            http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "content or file is required",
+        )
+    if content and len(content) > 4000:
+        raise HTTPException(
+            http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "content exceeds 4000 characters",
+        )
+
+    return _ReplyPayload(content, file_bytes, file_name, file_mime, saved_path)
+
+
+# ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
 
@@ -446,12 +547,13 @@ async def list_messages(
 @router.post("/{conv_id}/reply", response_model=MessageOut, status_code=201)
 async def reply_to_conversation(
     conv_id: str,
-    body: ReplyRequest,
+    request: Request,
     _: CurrentUser,
     session: SessionDep,
 ) -> MessageOut:
-    """Send an outbound reply. Platform-aware routing:
+    """Send an outbound reply. Accepts JSON (text-only) or multipart (with image).
 
+    Platform routing:
     - guest_contact ends with @reply.airbnb.com → SMTP (pre-booking inquiry)
     - guest_contact is numeric                  → Beds24 API (confirmed booking)
     - platform == whatsapp                      → Meta Cloud API
@@ -466,80 +568,42 @@ async def reply_to_conversation(
     if platform not in ("airbnb", "booking", "direct", "whatsapp"):
         raise HTTPException(
             http_status.HTTP_405_METHOD_NOT_ALLOWED,
-            f"Reply not supported for platform '{platform}' via this endpoint",
+            f"Reply not supported for platform '{platform}'",
         )
 
-    # --- Send via appropriate path (raises on failure; no DB write on error) ---
+    payload = await _parse_reply_request(request)
 
+    # --- Send via appropriate path; clean up saved file on any failure ---
     wamid: str | None = None
     beds24_msg_id: int | None = None
 
-    if platform == "whatsapp":
-        # WhatsApp: Meta Cloud API — guest_contact is E.164 without '+'
-        s = get_settings()
-        try:
-            async with httpx.AsyncClient(timeout=15) as http:
-                wa = WhatsAppClient(
-                    http,
-                    s.whatsapp_access_token,
-                    s.whatsapp_phone_number_id,
-                    s.whatsapp_api_version,
-                )
-                wamid = await wa.send_text(guest_contact or "", body.content)
-        except WhatsAppAPIError as exc:
-            logger.exception(
-                "reply.whatsapp_failed conv_id=%s status=%s body=%s",
-                conv_id,
-                exc.status_code,
-                exc.body,
+    try:
+        if platform == "whatsapp":
+            wamid = await _send_whatsapp(guest_contact or "", payload)
+        elif guest_contact and guest_contact.endswith("@reply.airbnb.com"):
+            await _send_smtp(guest_contact, payload)
+        elif guest_contact and guest_contact.isdigit():
+            beds24_msg_id = await _send_beds24(int(guest_contact), payload, session)
+        else:
+            raise HTTPException(
+                http_status.HTTP_405_METHOD_NOT_ALLOWED,
+                "Cannot determine reply path for this conversation",
             )
-            raise HTTPException(
-                http_status.HTTP_502_BAD_GATEWAY, "Failed to send WhatsApp reply"
-            ) from exc
-        except Exception as exc:
-            logger.exception("reply.whatsapp_failed conv_id=%s err=%s", conv_id, exc)
-            raise HTTPException(
-                http_status.HTTP_502_BAD_GATEWAY, "Failed to send WhatsApp reply"
-            ) from exc
+    except HTTPException:
+        if payload.saved_path:
+            payload.saved_path.unlink(missing_ok=True)
+        raise
 
-    elif guest_contact and guest_contact.endswith("@reply.airbnb.com"):
-        # Pre-booking inquiry: SMTP → Airbnb reply gateway
-        try:
-            await send_smtp_reply(guest_contact, body.content)
-        except Exception as exc:
-            logger.exception("reply.smtp_failed conv_id=%s err=%s", conv_id, exc)
-            raise HTTPException(
-                http_status.HTTP_502_BAD_GATEWAY, "Failed to send email reply"
-            ) from exc
-
-    elif guest_contact and guest_contact.isdigit():
-        # Confirmed booking: Beds24 API
-        booking_id = int(guest_contact)
-        s = get_settings()
-        token_row = (await session.execute(_SQL_BEDS24_TOKEN)).fetchone()
-        refresh_token = str(token_row[0]) if token_row else s.beds24_refresh_token
-        try:
-            async with httpx.AsyncClient(timeout=30) as http:
-                client = Beds24Client(http)
-                await client.authenticate(refresh_token)
-                beds24_msg_id = await client.post_message(booking_id, body.content)
-        except Exception as exc:
-            logger.exception("reply.beds24_failed conv_id=%s err=%s", conv_id, exc)
-            raise HTTPException(
-                http_status.HTTP_502_BAD_GATEWAY, "Failed to send Beds24 reply"
-            ) from exc
-
+    # --- Build message body for DB storage ---
+    if payload.saved_path:
+        img_tag = f'<img src="/media/attachments/{payload.saved_path.name}">'
+        message_body = f"{img_tag}\n{payload.content}" if payload.content else img_tag
     else:
-        raise HTTPException(
-            http_status.HTTP_405_METHOD_NOT_ALLOWED,
-            "Cannot determine reply path for this conversation",
-        )
+        message_body = payload.content or ""
 
     # --- Persist outbound message row ---
     sent_at = datetime.now(UTC)
     if beds24_msg_id is not None:
-        # Use the Beds24 message ID as hash so the polling worker deduplicates
-        # correctly when it later fetches the same host message.
         msg_hash = hashlib.sha256(str(beds24_msg_id).encode()).hexdigest()
         raw_headers = json.dumps(
             {"reply_path": "beds24", "beds24_message_id": beds24_msg_id}
@@ -561,7 +625,7 @@ async def reply_to_conversation(
             {
                 "conv_id": conv_id,
                 "hash": msg_hash,
-                "body": body.content,
+                "body": message_body,
                 "sent_at": sent_at,
                 "raw_headers": raw_headers,
             },
@@ -574,10 +638,9 @@ async def reply_to_conversation(
 
     message_id = str(msg_row[0])  # type: ignore[index]
 
-    # Fire-and-forget WS push
     from app.db.ingest import _try_publish  # noqa: PLC0415
 
-    await _try_publish(conv_id, message_id, "outbound", body.content, sent_at)
+    await _try_publish(conv_id, message_id, "outbound", message_body, sent_at)
 
     is_airbnb_email = (guest_contact or "").endswith("@reply.airbnb.com")
     if platform == "whatsapp":
@@ -586,12 +649,101 @@ async def reply_to_conversation(
         reply_path = "smtp"
     else:
         reply_path = "beds24"
-    logger.info("reply.sent conv_id=%s path=%s", conv_id, reply_path)
+    logger.info(
+        "reply.sent conv_id=%s path=%s has_attachment=%s",
+        conv_id,
+        reply_path,
+        payload.saved_path is not None,
+    )
 
     return MessageOut(
         id=message_id,
         direction="outbound",
-        body=body.content,
+        body=message_body,
         sent_at=sent_at,
         created_at=sent_at,
     )
+
+
+# ---------------------------------------------------------------------------
+# Per-channel send helpers (keep reply endpoint under 80 lines — Rule 9)
+# ---------------------------------------------------------------------------
+
+
+async def _send_whatsapp(phone: str, payload: _ReplyPayload) -> str:
+    """Send via Meta Cloud API. Returns wamid. Raises HTTPException on failure."""
+    s = get_settings()
+    try:
+        async with httpx.AsyncClient(timeout=15) as http:
+            wa = WhatsAppClient(
+                http,
+                s.whatsapp_access_token,
+                s.whatsapp_phone_number_id,
+                s.whatsapp_api_version,
+            )
+            if payload.file_bytes:
+                media_id = await wa.upload_media(
+                    payload.file_bytes,
+                    payload.file_mime or "image/jpeg",
+                    payload.file_name or "attachment.jpg",
+                )
+                caption = payload.content or ""
+                return await wa.send_image(phone, media_id, caption=caption)
+            return await wa.send_text(phone, payload.content or "")
+    except WhatsAppAPIError as exc:
+        logger.exception(
+            "reply.whatsapp_failed status=%s body=%s", exc.status_code, exc.body
+        )
+        raise HTTPException(
+            http_status.HTTP_502_BAD_GATEWAY, "Failed to send WhatsApp reply"
+        ) from exc
+    except Exception as exc:
+        logger.exception("reply.whatsapp_failed err=%s", exc)
+        raise HTTPException(
+            http_status.HTTP_502_BAD_GATEWAY, "Failed to send WhatsApp reply"
+        ) from exc
+
+
+async def _send_smtp(to_address: str, payload: _ReplyPayload) -> None:
+    """Send via SMTP. Raises HTTPException on failure."""
+    try:
+        await send_smtp_reply(
+            to_address,
+            payload.content or "",
+            attachment=payload.file_bytes,
+            attachment_name=payload.file_name,
+            attachment_mime_type=payload.file_mime,
+        )
+    except Exception as exc:
+        logger.exception("reply.smtp_failed err=%s", exc)
+        raise HTTPException(
+            http_status.HTTP_502_BAD_GATEWAY, "Failed to send email reply"
+        ) from exc
+
+
+async def _send_beds24(
+    booking_id: int, payload: _ReplyPayload, session: SessionDep
+) -> int:
+    """Send via Beds24 API. Returns beds24_message_id.
+
+    Raises HTTPException on failure.
+    """
+    s = get_settings()
+    token_row = (await session.execute(_SQL_BEDS24_TOKEN)).fetchone()
+    refresh_token = str(token_row[0]) if token_row else s.beds24_refresh_token
+    try:
+        async with httpx.AsyncClient(timeout=30) as http:
+            client = Beds24Client(http)
+            await client.authenticate(refresh_token)
+            return await client.post_message(
+                booking_id,
+                message=payload.content or "",
+                attachment=payload.file_bytes,
+                attachment_name=payload.file_name,
+                attachment_mime_type=payload.file_mime,
+            )
+    except Exception as exc:
+        logger.exception("reply.beds24_failed err=%s", exc)
+        raise HTTPException(
+            http_status.HTTP_502_BAD_GATEWAY, "Failed to send Beds24 reply"
+        ) from exc
