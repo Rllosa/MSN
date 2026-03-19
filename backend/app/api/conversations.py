@@ -198,6 +198,18 @@ _SQL_UPDATE_STATUS = text(
     " WHERE id = :conv_id"
 )
 
+# Cascade archive/unarchive to the cross-platform linked conversation (identified
+# by matching guest_phone). Covers the WhatsApp ↔ booking pairing.
+_SQL_CASCADE_STATUS = text(
+    "UPDATE conversations"
+    " SET status = :status, updated_at = NOW()"
+    " WHERE guest_phone = ("
+    "   SELECT guest_phone FROM conversations WHERE id = :conv_id"
+    " )"
+    " AND guest_phone IS NOT NULL"
+    " AND id != :conv_id"
+)
+
 _SQL_CONV_EXISTS = text("SELECT id FROM conversations WHERE id = :conv_id")
 
 _SQL_LINKED_CONV = text(
@@ -502,6 +514,9 @@ async def patch_conversation(
     if body.status is not None:
         await session.execute(
             _SQL_UPDATE_STATUS, {"status": body.status, "conv_id": conv_id}
+        )
+        await session.execute(
+            _SQL_CASCADE_STATUS, {"status": body.status, "conv_id": conv_id}
         )
     if body.mark_read:
         await session.execute(_SQL_MARK_READ, {"conv_id": conv_id})

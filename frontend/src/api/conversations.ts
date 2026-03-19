@@ -42,17 +42,27 @@ export async function getConversations(
   search = "",
   platforms: string[] = [],
   propertyIds: string[] = [],
+  archived = false,
 ): Promise<ConversationsPage> {
   const res = await client.get<ConversationsPage>("/conversations/", {
     params: {
       offset,
       limit,
+      status: archived ? "archived" : "active",
       ...(unreadOnly ? { unread_only: true } : {}),
       ...(search ? { search } : {}),
       ...(platforms.length > 0 ? { platform: platforms.join(",") } : {}),
       ...(propertyIds.length > 0 ? { property_id: propertyIds.join(",") } : {}),
     },
   });
+  return res.data;
+}
+
+export async function patchConversation(
+  id: string,
+  patch: { status?: "active" | "archived"; mark_read?: boolean },
+): Promise<ConversationSummary> {
+  const res = await client.patch<ConversationSummary>(`/conversations/${id}`, patch);
   return res.data;
 }
 

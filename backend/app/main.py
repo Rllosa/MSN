@@ -16,6 +16,7 @@ from app.api.schemas import HealthResponse
 from app.api.ws import pubsub_listener, websocket_endpoint
 from app.db.redis import dispose_redis, init_redis
 from app.db.session import dispose_engine, init_engine
+from app.workers.archive import start_archive_worker, stop_archive_worker
 from app.workers.beds24 import start_beds24_worker, stop_beds24_worker
 from app.workers.imap import start_imap_worker, stop_imap_worker
 
@@ -48,11 +49,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     init_redis()
     start_imap_worker()
     start_beds24_worker()
+    start_archive_worker()
     _pubsub_task = asyncio.create_task(pubsub_listener())
     _cleanup_task = asyncio.create_task(_attachment_cleanup_worker())
     yield
     await stop_imap_worker()
     await stop_beds24_worker()
+    await stop_archive_worker()
     for task in (_pubsub_task, _cleanup_task):
         if task is not None:
             task.cancel()
