@@ -8,11 +8,12 @@ Message insert uses ON CONFLICT (message_id_hash) DO NOTHING for deduplication.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import logging
 import re
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import httpx
@@ -159,9 +160,10 @@ _APT_NUM_TO_BEDS24_ID: dict[int, int] = {
 _SQL_UPSERT_CONVERSATION = text(
     """
     INSERT INTO conversations (platform, guest_name, guest_contact, guest_phone,
-                               property_id, last_message_at, created_at, updated_at)
+                               property_id, checkout_date, last_message_at,
+                               created_at, updated_at)
     VALUES (:platform, :guest_name, :guest_contact, :guest_phone,
-            :property_id, :sent_at, NOW(), NOW())
+            :property_id, :checkout_date, :sent_at, NOW(), NOW())
     ON CONFLICT (guest_contact) WHERE guest_contact IS NOT NULL DO UPDATE
         SET platform     = CASE
                 WHEN EXCLUDED.platform NOT IN ('booking', 'direct')
@@ -175,12 +177,26 @@ _SQL_UPSERT_CONVERSATION = text(
             END,
             guest_phone  = COALESCE(EXCLUDED.guest_phone, conversations.guest_phone),
             property_id  = COALESCE(EXCLUDED.property_id, conversations.property_id),
+            checkout_date = COALESCE(
+                EXCLUDED.checkout_date, conversations.checkout_date
+            ),
             last_message_at = GREATEST(
                 conversations.last_message_at, EXCLUDED.last_message_at
             ),
             updated_at   = NOW()
     RETURNING id
     """
+)
+
+# Archive a Beds24 conversation when checkout passed 7+ days ago OR booking was
+# cancelled — only when no unread messages remain (safety guard).
+_SQL_AUTO_ARCHIVE_BEDS24 = text(
+    "UPDATE conversations"
+    " SET status = 'archived', updated_at = NOW()"
+    " WHERE id = :conv_id"
+    "   AND status = 'active'"
+    "   AND unread_count = 0"
+    "   AND (:force OR checkout_date < CURRENT_DATE - INTERVAL '7 days')"
 )
 
 _SQL_CONV_BY_GUEST_PHONE = text(
@@ -320,6 +336,7 @@ async def ingest_airbnb_email(
                     "guest_contact": parsed.reply_to,
                     "guest_phone": None,
                     "property_id": property_id,
+                    "checkout_date": None,
                     "sent_at": sent_at,
                 },
             )
@@ -421,6 +438,12 @@ async def ingest_beds24_message(
 
     guest_phone = normalize_phone(booking.get("phone") or booking.get("mobile"))
 
+    checkout_date: date | None = None
+    with contextlib.suppress(ValueError, TypeError):
+        departure = booking.get("departure") or booking.get("lastNight")
+        if departure:
+            checkout_date = date.fromisoformat(str(departure))
+
     conv_result = await session.execute(
         _SQL_UPSERT_CONVERSATION,
         {
@@ -429,6 +452,7 @@ async def ingest_beds24_message(
             "guest_contact": str(booking_id),
             "guest_phone": guest_phone,
             "property_id": property_id,
+            "checkout_date": checkout_date,
             "sent_at": sent_at,
         },
     )
@@ -467,6 +491,25 @@ async def ingest_beds24_message(
             await session.execute(_SQL_INCREMENT_UNREAD, {"conv_id": conversation_id})
 
     await session.commit()
+
+    # Auto-archive when booking is cancelled or checkout passed 7+ days ago.
+    # Guard: skip if unread messages exist (enforced in SQL).
+    is_cancelled = booking.get("status", "").lower() in {"cancelled", "canceled"}
+    checkout_expired = (
+        checkout_date is not None and checkout_date < date.today() - timedelta(days=7)
+    )
+    if is_cancelled or checkout_expired:
+        result = await session.execute(
+            _SQL_AUTO_ARCHIVE_BEDS24,
+            {"conv_id": conversation_id, "force": is_cancelled},
+        )
+        if result.rowcount:
+            logger.info(
+                "ingest.beds24.auto_archived conv_id=%s reason=%s",
+                conversation_id,
+                "cancelled" if is_cancelled else "checkout_expired",
+            )
+            await session.commit()
 
     if inserted:
         logger.info(
@@ -512,6 +555,7 @@ async def ingest_whatsapp_message(
             "guest_contact": phone,  # E.164 without '+'; dedup key
             "guest_phone": phone,
             "property_id": None,
+            "checkout_date": None,
             "sent_at": sent_at,
         },
     )

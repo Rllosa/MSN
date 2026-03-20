@@ -8,6 +8,7 @@ interface Props {
   hasMore: boolean;
   loadingMore: boolean;
   onLoadMore: () => void;
+  onArchive?: (id: string, archive: boolean) => void;
 }
 
 export default function ConversationList({
@@ -16,6 +17,7 @@ export default function ConversationList({
   hasMore,
   loadingMore,
   onLoadMore,
+  onArchive,
 }: Props) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -52,6 +54,7 @@ export default function ConversationList({
             const qs = searchParams.toString();
             navigate(`/inbox/${conv.id}${qs ? `?${qs}` : ""}`);
           }}
+          onArchive={onArchive}
         />
       ))}
       {hasMore && (

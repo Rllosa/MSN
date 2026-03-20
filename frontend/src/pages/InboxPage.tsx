@@ -13,9 +13,11 @@ import {
   getConversation,
   getConversations,
   markConversationRead,
+  patchConversation,
 } from "../api/conversations";
 import { getProperties, Property } from "../api/properties";
 import { useInboxSocket } from "../api/socket";
+import { useNavigate } from "react-router-dom";
 import FilterDropdown from "../components/FilterDropdown";
 import ConversationList from "../components/ConversationList";
 import MessageThread from "../components/MessageThread";
@@ -44,8 +46,12 @@ export default function InboxPage() {
   const { conversationId } = useParams<{ conversationId?: string }>();
   const conversationIdRef = useRef(conversationId);
   conversationIdRef.current = conversationId;
+  const navigate = useNavigate();
 
   const [searchParams, setSearchParams] = useSearchParams();
+  const [archived, setArchived] = useState(false);
+  const archivedRef = useRef(archived);
+  archivedRef.current = archived;
 
   // URL-persisted filter params (strings used as effect deps to avoid
   // array identity churn on every render)
@@ -94,6 +100,7 @@ export default function InboxPage() {
         searchRef.current,
         selectedPlatformsRef.current,
         selectedPropertyIdsRef.current,
+        archivedRef.current,
       );
       setTotal(page.total);
       if (replace) {
@@ -165,12 +172,19 @@ export default function InboxPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Re-fetch when filters change
+  // Re-fetch when filters or tab change
   useEffect(() => {
     setLoadingList(true);
     fetchList(true).finally(() => setLoadingList(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [unreadOnly, search, platformParam, propertyParam]);
+  }, [unreadOnly, search, platformParam, propertyParam, archived]);
+
+  const handleArchive = async (id: string, archive: boolean) => {
+    await patchConversation(id, { status: archive ? "archived" : "active" });
+    setConversations((prev) => prev.filter((c) => c.id !== id));
+    setTotal((t) => t - 1);
+    if (conversationId === id) navigate("/inbox");
+  };
 
   const handleLoadMore = async () => {
     setLoadingMore(true);
@@ -278,13 +292,35 @@ export default function InboxPage() {
               <p className="text-[10px] font-semibold tracking-[0.2em] uppercase text-zinc-500 mb-0.5">
                 The Black Palm
               </p>
-              <h1 className="text-base font-bold text-white">Inbox</h1>
+              <h1 className="text-base font-bold text-white">
+                {archived ? "Archive" : "Inbox"}
+              </h1>
             </div>
             {total > 0 && (
               <span className="text-xs text-zinc-500 font-medium bg-zinc-800 px-2 py-0.5 rounded-full">
                 {total}
               </span>
             )}
+          </div>
+          {/* Inbox / Archive tab toggle */}
+          <div className="flex rounded-lg overflow-hidden bg-zinc-800 mb-3">
+            {(["Inbox", "Archive"] as const).map((tab) => (
+              <button
+                key={tab}
+                onClick={() => {
+                  setArchived(tab === "Archive");
+                  setConversations([]);
+                  if (conversationId) navigate("/inbox");
+                }}
+                className={`flex-1 py-1.5 text-xs font-medium transition-colors ${
+                  (tab === "Archive") === archived
+                    ? "bg-zinc-600 text-white"
+                    : "text-zinc-400 hover:text-zinc-200"
+                }`}
+              >
+                {tab}
+              </button>
+            ))}
           </div>
           <div className="relative mb-2">
             <svg
@@ -364,6 +400,7 @@ export default function InboxPage() {
             hasMore={hasMore}
             loadingMore={loadingMore}
             onLoadMore={handleLoadMore}
+            onArchive={handleArchive}
           />
         )}
       </div>
