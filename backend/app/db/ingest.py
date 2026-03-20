@@ -440,9 +440,9 @@ async def ingest_beds24_message(
 
     checkout_date: date | None = None
     with contextlib.suppress(ValueError, TypeError):
-        last_night = booking.get("lastNight")
-        if last_night:
-            checkout_date = date.fromisoformat(str(last_night))
+        departure = booking.get("departure") or booking.get("lastNight")
+        if departure:
+            checkout_date = date.fromisoformat(str(departure))
 
     conv_result = await session.execute(
         _SQL_UPSERT_CONVERSATION,

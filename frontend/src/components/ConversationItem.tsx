@@ -116,7 +116,7 @@ export default function ConversationItem({
             onArchive(conv.id, !isArchived);
           }}
           title={isArchived ? "Unarchive" : "Archive"}
-          className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-white/10 text-zinc-500 hover:text-zinc-200"
+          className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-white/10 text-zinc-500 hover:text-zinc-200"
         >
           {isArchived ? (
             /* Inbox / unarchive icon */

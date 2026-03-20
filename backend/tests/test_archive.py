@@ -215,7 +215,7 @@ def _make_booking(
         "lastName": "Doe",
         "phone": None,
         "mobile": None,
-        "lastNight": last_night,
+        "departure": last_night,
         "status": status,
     }
 
