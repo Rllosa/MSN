@@ -195,6 +195,7 @@ async def _get_checkout_date(conv_id: str):
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_msg(booking_id: int, msg_id: int = 1) -> dict:
     return {
         "id": msg_id,

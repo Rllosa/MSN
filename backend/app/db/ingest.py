@@ -496,8 +496,7 @@ async def ingest_beds24_message(
     # Guard: skip if unread messages exist (enforced in SQL).
     is_cancelled = booking.get("status", "").lower() in {"cancelled", "canceled"}
     checkout_expired = (
-        checkout_date is not None
-        and checkout_date < date.today() - timedelta(days=7)
+        checkout_date is not None and checkout_date < date.today() - timedelta(days=7)
     )
     if is_cancelled or checkout_expired:
         result = await session.execute(

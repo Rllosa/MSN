@@ -50,7 +50,7 @@ describe("App", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText("Inbox")).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Inbox" })).toBeInTheDocument();
     });
   });
 });
