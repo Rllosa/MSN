@@ -117,21 +117,43 @@ class Beds24Client:
     # Bookings
     # ------------------------------------------------------------------
 
-    async def get_bookings(self, booking_ids: list[int]) -> list[dict]:
-        """Batch-fetch booking details for a list of booking IDs.
+    async def get_bookings(
+        self,
+        booking_ids: list[int] | None = None,
+        status: str | None = None,
+    ) -> list[dict]:
+        """Fetch booking details.
 
-        Returns a list of booking dicts (may be shorter than input if some
-        IDs are not found).
+        - booking_ids: filter by specific IDs (note: Beds24 ignores this filter
+          for confirmed bookings; use status= to fetch cancelled bookings)
+        - status: e.g. 'cancelled' to fetch only cancelled bookings
+
+        Returns all matching bookings (all pages).
         """
-        if not booking_ids:
+        if booking_ids is not None and len(booking_ids) == 0:
             return []
-        resp = await self._http.get(
-            f"{BEDS24_BASE}/bookings",
-            headers=self._auth_headers(),
-            params={"ids": ",".join(str(b) for b in booking_ids)},
-        )
-        resp.raise_for_status()
-        return resp.json().get("data", [])
+
+        params: dict[str, str] = {}
+        if booking_ids:
+            params["ids"] = ",".join(str(b) for b in booking_ids)
+        if status:
+            params["status"] = status
+
+        all_data: list[dict] = []
+        page = 1
+        while True:
+            resp = await self._http.get(
+                f"{BEDS24_BASE}/bookings",
+                headers=self._auth_headers(),
+                params={**params, "page": page},
+            )
+            resp.raise_for_status()
+            body = resp.json()
+            all_data.extend(body.get("data", []))
+            if not body.get("pages", {}).get("nextPageExists", False):
+                break
+            page += 1
+        return all_data
 
     # ------------------------------------------------------------------
     # Properties

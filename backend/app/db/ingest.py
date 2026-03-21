@@ -13,7 +13,7 @@ import hashlib
 import json
 import logging
 import re
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import httpx
@@ -190,14 +190,11 @@ _SQL_UPSERT_CONVERSATION = text(
 
 # Archive a Beds24 conversation when checkout passed 7+ days ago OR booking was
 # cancelled — only when no unread messages remain (safety guard).
-_SQL_AUTO_ARCHIVE_BEDS24 = text(
-    "UPDATE conversations"
-    " SET status = 'archived', updated_at = NOW()"
-    " WHERE id = :conv_id"
-    "   AND status = 'active'"
-    "   AND unread_count = 0"
-    "   AND (:force OR checkout_date < CURRENT_DATE - INTERVAL '7 days')"
+_SQL_UNARCHIVE_ON_MESSAGE = text(
+    "UPDATE conversations SET status = 'active', updated_at = NOW()"
+    " WHERE id = :conv_id AND status = 'archived'"
 )
+
 
 _SQL_CONV_BY_GUEST_PHONE = text(
     "SELECT id FROM conversations WHERE guest_phone = :guest_phone LIMIT 1"
@@ -368,6 +365,7 @@ async def ingest_airbnb_email(
         message_id = str(row[0])
         if parsed.direction == "inbound":
             await session.execute(_SQL_INCREMENT_UNREAD, {"conv_id": conversation_id})
+        await session.execute(_SQL_UNARCHIVE_ON_MESSAGE, {"conv_id": conversation_id})
 
     await session.commit()
 
@@ -489,27 +487,9 @@ async def ingest_beds24_message(
         message_id = str(row[0])
         if direction == "inbound":
             await session.execute(_SQL_INCREMENT_UNREAD, {"conv_id": conversation_id})
+        await session.execute(_SQL_UNARCHIVE_ON_MESSAGE, {"conv_id": conversation_id})
 
     await session.commit()
-
-    # Auto-archive when booking is cancelled or checkout passed 7+ days ago.
-    # Guard: skip if unread messages exist (enforced in SQL).
-    is_cancelled = booking.get("status", "").lower() in {"cancelled", "canceled"}
-    checkout_expired = (
-        checkout_date is not None and checkout_date < date.today() - timedelta(days=7)
-    )
-    if is_cancelled or checkout_expired:
-        result = await session.execute(
-            _SQL_AUTO_ARCHIVE_BEDS24,
-            {"conv_id": conversation_id, "force": is_cancelled},
-        )
-        if result.rowcount:
-            logger.info(
-                "ingest.beds24.auto_archived conv_id=%s reason=%s",
-                conversation_id,
-                "cancelled" if is_cancelled else "checkout_expired",
-            )
-            await session.commit()
 
     if inserted:
         logger.info(
@@ -600,6 +580,7 @@ async def ingest_whatsapp_message(
         if linked_row:
             linked_booking_id = str(linked_row[0])
             await session.execute(_SQL_INCREMENT_UNREAD, {"conv_id": linked_booking_id})
+        await session.execute(_SQL_UNARCHIVE_ON_MESSAGE, {"conv_id": conversation_id})
 
     await session.commit()
 
