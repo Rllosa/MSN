@@ -254,18 +254,33 @@ async def test_checkout_date_stored_on_ingest(db_engine):
 
 @pytest.mark.asyncio
 async def test_auto_archive_on_checkout_expired(db_engine):
-    """Beds24 conv is auto-archived when checkout_date < today - 7 days."""
+    """Sweeper archives Beds24 conv when checkout_date < today - 7 days."""
     from app.db.ingest import ingest_beds24_message
     from app.db.session import worker_session
+    from app.workers.archive import _SQL_ARCHIVE_STALE_BEDS24
 
     expired = (date.today() - timedelta(days=10)).isoformat()
-    # Host (outbound) message → unread_count stays 0 → archive allowed
     msg = {**_make_msg(booking_id=99002), "source": "host"}
     booking = _make_booking(99002, last_night=expired)
 
     async with worker_session() as session:
         with patch("app.db.ingest._try_publish", new_callable=AsyncMock):
             await ingest_beds24_message(msg, "airbnb", booking, session)
+
+    # Ingest alone no longer archives — the sweeper does it
+    conn = await asyncpg.connect(_asyncpg_dsn())
+    try:
+        status = await conn.fetchval(
+            "SELECT status FROM conversations WHERE guest_contact = '99002'"
+        )
+    finally:
+        await conn.close()
+    assert status == "active"
+
+    # Run the sweeper SQL — now it should archive
+    async with worker_session() as session:
+        await session.execute(_SQL_ARCHIVE_STALE_BEDS24)
+        await session.commit()
 
     conn = await asyncpg.connect(_asyncpg_dsn())
     try:
@@ -274,7 +289,6 @@ async def test_auto_archive_on_checkout_expired(db_engine):
         )
     finally:
         await conn.close()
-
     assert status == "archived"
 
 
@@ -308,17 +322,32 @@ async def test_no_auto_archive_when_unread(db_engine):
 
 @pytest.mark.asyncio
 async def test_cancelled_booking_archived(db_engine):
-    """Beds24 conv is auto-archived immediately when booking status is cancelled."""
+    """Sweeper archives Beds24 conv when Beds24 API reports booking cancelled."""
     from app.db.ingest import ingest_beds24_message
     from app.db.session import worker_session
+    from app.workers.archive import _SQL_ARCHIVE_CANCELLED
 
-    # Host (outbound) message → unread_count stays 0 → archive allowed
     msg = {**_make_msg(booking_id=99004), "source": "host"}
     booking = _make_booking(99004, last_night="2026-03-15", status="cancelled")
 
     async with worker_session() as session:
         with patch("app.db.ingest._try_publish", new_callable=AsyncMock):
             await ingest_beds24_message(msg, "airbnb", booking, session)
+
+    # Ingest alone no longer archives cancelled bookings
+    conn = await asyncpg.connect(_asyncpg_dsn())
+    try:
+        status = await conn.fetchval(
+            "SELECT status FROM conversations WHERE guest_contact = '99004'"
+        )
+    finally:
+        await conn.close()
+    assert status == "active"
+
+    # Sweeper archives using the list of cancelled booking IDs from Beds24 API
+    async with worker_session() as session:
+        await session.execute(_SQL_ARCHIVE_CANCELLED, {"contacts": ["99004"]})
+        await session.commit()
 
     conn = await asyncpg.connect(_asyncpg_dsn())
     try:
@@ -327,7 +356,6 @@ async def test_cancelled_booking_archived(db_engine):
         )
     finally:
         await conn.close()
-
     assert status == "archived"
 
 
