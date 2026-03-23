@@ -2,11 +2,11 @@
 
 Runs once per day at midnight UTC.  Archives:
 - Beds24 (Airbnb/Booking.com) conversations where checkout_date < today - 7 days
-- Confirmed bookings (checkout_date in the future) silent > 15 days
-- Airbnb/Booking inquiries with no checkout_date inactive > 15 days (pre-booking
+- Confirmed bookings (checkout_date in the future) silent > 10 days
+- Airbnb/Booking inquiries with no checkout_date inactive > 10 days (pre-booking
   inquiries that never converted to a confirmed booking)
 - Beds24 conversations whose booking is cancelled in Beds24 API (unread_count = 0)
-- WhatsApp and email conversations where last_message_at < now - 15 days
+- WhatsApp and email conversations where last_message_at < now - 10 days
 
 Only conversations with unread_count = 0 are archived (safety guard).
 """
@@ -46,7 +46,7 @@ _SQL_ARCHIVE_SILENT_BOOKINGS = text(
     "   AND unread_count = 0"
     "   AND platform IN ('airbnb', 'booking')"
     "   AND checkout_date > CURRENT_DATE"
-    "   AND last_message_at < NOW() - INTERVAL '15 days'"
+    "   AND last_message_at < NOW() - INTERVAL '10 days'"
 )
 
 _SQL_ARCHIVE_NO_CHECKOUT = text(
@@ -56,7 +56,7 @@ _SQL_ARCHIVE_NO_CHECKOUT = text(
     "   AND unread_count = 0"
     "   AND platform IN ('airbnb', 'booking')"
     "   AND checkout_date IS NULL"
-    "   AND last_message_at < NOW() - INTERVAL '15 days'"
+    "   AND last_message_at < NOW() - INTERVAL '10 days'"
 )
 
 _SQL_ARCHIVE_INACTIVE = text(
@@ -65,7 +65,7 @@ _SQL_ARCHIVE_INACTIVE = text(
     " WHERE status = 'active'"
     "   AND unread_count = 0"
     "   AND platform NOT IN ('airbnb', 'booking')"
-    "   AND last_message_at < NOW() - INTERVAL '15 days'"
+    "   AND last_message_at < NOW() - INTERVAL '10 days'"
 )
 
 _SQL_ACTIVE_BOOKING_IDS = text(
