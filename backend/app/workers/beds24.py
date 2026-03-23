@@ -21,6 +21,7 @@ from app.clients.beds24 import Beds24AuthError, Beds24Client
 from app.config import get_settings
 from app.db.ingest import ingest_beds24_message
 from app.db.session import worker_session
+from app.workers.archive import archive_lock
 
 logger = logging.getLogger(__name__)
 
@@ -125,7 +126,6 @@ async def _run_worker() -> None:
         client = Beds24Client(http)
         while True:
             try:
-                from app.workers.archive import archive_lock
                 async with archive_lock:
                     refresh_token = await _poll_once(client, refresh_token)
                 backoff = 5  # reset on success
