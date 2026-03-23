@@ -88,14 +88,16 @@ export default function InboxPage() {
   selectedPlatformsRef.current = selectedPlatforms;
   const selectedPropertyIdsRef = useRef(selectedPropertyIds);
   selectedPropertyIdsRef.current = selectedPropertyIds;
+  const conversationsLengthRef = useRef(conversations.length);
+  conversationsLengthRef.current = conversations.length;
 
   // Refresh the conversation list (replace = reset to page 1)
   const fetchList = useCallback(
-    async (replace = true) => {
+    async (replace = true, limit = PAGE_SIZE) => {
       const offset = replace ? 0 : conversations.length;
       const page = await getConversations(
         offset,
-        PAGE_SIZE,
+        replace ? limit : PAGE_SIZE,
         unreadOnlyRef.current,
         searchRef.current,
         selectedPlatformsRef.current,
@@ -141,9 +143,11 @@ export default function InboxPage() {
     [conversationId, refreshDetail, fetchList],
   );
 
-  // WebSocket: on new_message → refresh list + detail if it's the open conv
+  // WebSocket: on new_message → refresh list preserving scroll position,
+  // then refresh detail if it's the open conversation.
   useInboxSocket((convId) => {
-    fetchList(true).catch(() => {});
+    const visibleCount = Math.max(conversationsLengthRef.current, PAGE_SIZE);
+    fetchList(true, visibleCount).catch(() => {});
     if (convId === conversationIdRef.current) {
       refreshDetail(convId).catch(() => {});
     }
