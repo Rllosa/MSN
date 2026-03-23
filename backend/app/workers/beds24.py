@@ -125,7 +125,9 @@ async def _run_worker() -> None:
         client = Beds24Client(http)
         while True:
             try:
-                refresh_token = await _poll_once(client, refresh_token)
+                from app.workers.archive import archive_lock
+                async with archive_lock:
+                    refresh_token = await _poll_once(client, refresh_token)
                 backoff = 5  # reset on success
                 await asyncio.sleep(s.beds24_poll_interval_seconds)
 

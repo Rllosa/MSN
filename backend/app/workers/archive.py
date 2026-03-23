@@ -27,6 +27,7 @@ from app.workers.beds24 import _load_refresh_token
 logger = logging.getLogger(__name__)
 
 _worker_task: asyncio.Task | None = None
+archive_lock = asyncio.Lock()
 
 _SQL_ARCHIVE_STALE_BEDS24 = text(
     "UPDATE conversations"
@@ -122,12 +123,13 @@ async def _run_archive_worker() -> None:
         await asyncio.sleep((tomorrow_midnight - now).total_seconds())
 
         try:
-            async with worker_session() as session:
-                r1 = await session.execute(_SQL_ARCHIVE_STALE_BEDS24)
-                r2 = await session.execute(_SQL_ARCHIVE_SILENT_BOOKINGS)
-                r3 = await session.execute(_SQL_ARCHIVE_NO_CHECKOUT)
-                r4 = await session.execute(_SQL_ARCHIVE_INACTIVE)
-                await session.commit()
+            async with archive_lock:
+                async with worker_session() as session:
+                    r1 = await session.execute(_SQL_ARCHIVE_STALE_BEDS24)
+                    r2 = await session.execute(_SQL_ARCHIVE_SILENT_BOOKINGS)
+                    r3 = await session.execute(_SQL_ARCHIVE_NO_CHECKOUT)
+                    r4 = await session.execute(_SQL_ARCHIVE_INACTIVE)
+                    await session.commit()
                 logger.info(
                     "archive.worker.ran beds24=%d silent=%d no_checkout=%d inactive=%d",
                     r1.rowcount,
