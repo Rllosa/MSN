@@ -21,7 +21,7 @@ from app.clients.beds24 import Beds24AuthError, Beds24Client
 from app.config import get_settings
 from app.db.ingest import ingest_beds24_message
 from app.db.session import worker_session
-from app.workers.archive import archive_lock
+from app.workers.locks import archive_lock
 
 logger = logging.getLogger(__name__)
 

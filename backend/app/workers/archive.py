@@ -23,11 +23,11 @@ from sqlalchemy import text
 
 from app.db.session import worker_session
 from app.workers.beds24 import _load_refresh_token
+from app.workers.locks import archive_lock
 
 logger = logging.getLogger(__name__)
 
 _worker_task: asyncio.Task | None = None
-archive_lock = asyncio.Lock()
 
 _SQL_ARCHIVE_STALE_BEDS24 = text(
     "UPDATE conversations"
