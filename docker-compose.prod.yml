@@ -49,7 +49,8 @@ services:
         condition: service_healthy
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      # Bound to localhost only: the host nginx proxies to it. Never expose the API directly.
+      - "127.0.0.1:8000:8000"
     volumes:
       - media_attachments:/app/media/attachments
     healthcheck:
@@ -70,7 +71,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     ports:
-      - "3001:80"
+      - "127.0.0.1:3001:80"
 
 networks:
   msn:

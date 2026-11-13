@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.workers.imap import (
+    ImapCommandError,
     _poll_once,
     _run_worker,
     start_imap_worker,
@@ -33,8 +34,19 @@ def _make_client(uids: list[bytes], raw_message: bytes = b"raw") -> MagicMock:
     # search returns ("OK", [b"1 2 3"]) or ("OK", [b""]) when no results
     uid_string = b" ".join(uids) if uids else b""
     client.search = AsyncMock(return_value=("OK", [uid_string]))
-    # fetch returns ("OK", [b"..headers..", b"<raw message bytes>", b")"])
-    client.fetch = AsyncMock(return_value=("OK", [b"..headers..", raw_message, b")"]))
+    # Real aioimaplib FETCH answer: the message literal is a *bytearray* line, e.g.
+    # ("OK", [b"1 FETCH (RFC822 {123}", bytearray(b"<raw>"), b")", b"Fetch completed"])
+    client.fetch = AsyncMock(
+        return_value=(
+            "OK",
+            [
+                b"1 FETCH (RFC822 {%d}" % len(raw_message),
+                bytearray(raw_message),
+                b")",
+                b"Fetch completed",
+            ],
+        )
+    )
     client.store = AsyncMock(return_value=("OK", []))
     return client
 
@@ -68,9 +80,51 @@ async def test_poll_once_fetches_emails() -> None:
     assert on_email.call_count == 2
     on_email.assert_called_with(raw)
     assert client.store.call_count == 2
-    # Verify SEEN flag is applied to both UIDs
+    # SEEN flag applied to both ids, passed as str (bytes would be sent as "b'1'")
     seen_uids = {call.args[0] for call in client.store.call_args_list}
-    assert seen_uids == {b"1", b"2"}
+    assert seen_uids == {"1", "2"}
+    fetched_ids = {call.args[0] for call in client.fetch.call_args_list}
+    assert fetched_ids == {"1", "2"}
+
+
+@pytest.mark.asyncio
+async def test_poll_once_skips_failed_fetch() -> None:
+    """FETCH answered NO/BAD → logged and skipped: no IndexError, nothing seen."""
+    client = _make_client(uids=[b"7"])
+    client.fetch = AsyncMock(return_value=("BAD", [b"Error in IMAP command FETCH"]))
+    on_email = AsyncMock()
+
+    await _poll_once(client, on_email)
+
+    on_email.assert_not_called()
+    client.store.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_poll_once_marks_seen_when_processing_fails() -> None:
+    """One email that fails to process must not block the inbox forever."""
+    client = _make_client(uids=[b"1", b"2"])
+    on_email = AsyncMock(side_effect=[ValueError("bad email"), None])
+
+    await _poll_once(client, on_email)
+
+    assert on_email.call_count == 2
+    assert client.store.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_poll_once_raises_when_search_fails() -> None:
+    """A NO/BAD SEARCH raises a clear error instead of parsing the error text as ids."""
+    client = _make_client(uids=[])
+    client.search = AsyncMock(
+        return_value=("BAD", [b"Command SEARCH illegal in state NONAUTH"])
+    )
+    on_email = AsyncMock()
+
+    with pytest.raises(ImapCommandError):
+        await _poll_once(client, on_email)
+
+    client.fetch.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -129,6 +183,48 @@ async def test_run_worker_retries_on_error() -> None:
     assert mock_sleep.call_count >= 1
     # connected twice: first failed, second cancelled cleanly
     assert call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_run_worker_login_refused_closes_connection_and_backs_off() -> None:
+    """LOGIN answered NO → connection logged out (no leak), backoff, then retry.
+
+    Regression: connections were never closed, so retries every 5 s piled up until the
+    server refused logins (mail_max_userip_connections exceeded).
+    """
+    on_email = AsyncMock()
+    instances: list[MagicMock] = []
+
+    with patch("app.workers.imap.get_settings", return_value=_fake_settings()):
+        with patch("app.workers.imap.aioimaplib.IMAP4_SSL") as mock_cls:
+            with patch(
+                "app.workers.imap.asyncio.sleep", new_callable=AsyncMock
+            ) as mock_sleep:
+
+                def _side_effect(*_: object, **__: object) -> MagicMock:
+                    instance = MagicMock()
+                    instance.wait_hello_from_server = AsyncMock()
+                    instance.logout = AsyncMock(return_value=("OK", []))
+                    if not instances:
+                        instance.login = AsyncMock(
+                            return_value=(
+                                "NO",
+                                [b"[UNAVAILABLE] Maximum number of connections"],
+                            )
+                        )
+                    else:
+                        instance.login = AsyncMock(side_effect=asyncio.CancelledError)
+                    instances.append(instance)
+                    return instance
+
+                mock_cls.side_effect = _side_effect
+
+                await _run_worker(on_email)
+
+    assert len(instances) == 2
+    instances[0].logout.assert_awaited_once()  # failed connection closed
+    instances[0].select.assert_not_called()  # never polled after a refused login
+    mock_sleep.assert_any_await(5)  # backoff before retry
 
 
 # ---------------------------------------------------------------------------
