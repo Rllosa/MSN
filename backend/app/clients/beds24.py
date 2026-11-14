@@ -85,15 +85,21 @@ class Beds24Client:
     # Messages
     # ------------------------------------------------------------------
 
-    async def get_messages(self, page: int = 1) -> tuple[list[dict], bool]:
+    async def get_messages(
+        self, page: int = 1, max_age_days: int | None = None
+    ) -> tuple[list[dict], bool]:
         """Fetch one page of booking messages.
 
+        ``max_age_days`` maps to Beds24's ``maxAge`` filter (1-999 days).
         Returns (messages, next_page_exists).
         """
+        params: dict[str, int] = {"page": page}
+        if max_age_days is not None:
+            params["maxAge"] = max_age_days
         resp = await self._http.get(
             f"{BEDS24_BASE}/bookings/messages",
             headers=self._auth_headers(),
-            params={"page": page},
+            params=params,
         )
         resp.raise_for_status()
         body = resp.json()
@@ -101,12 +107,21 @@ class Beds24Client:
         next_exists: bool = body.get("pages", {}).get("nextPageExists", False)
         return data, next_exists
 
-    async def get_all_guest_messages(self) -> list[dict]:
-        """Fetch all pages and return all messages (guest + host)."""
+    async def get_all_guest_messages(
+        self, max_age_days: int | None = None
+    ) -> list[dict]:
+        """Fetch all pages and return all messages (guest + host).
+
+        Pass ``max_age_days`` when polling: without it every poll re-downloads the
+        whole message history (10+ pages and growing), which exhausts the Beds24
+        5-minute credit limit (HTTP 403/429) before the poll can complete.
+        """
         all_msgs: list[dict] = []
         page = 1
         while True:
-            msgs, has_next = await self.get_messages(page=page)
+            msgs, has_next = await self.get_messages(
+                page=page, max_age_days=max_age_days
+            )
             all_msgs.extend(msgs)
             if not has_next:
                 break

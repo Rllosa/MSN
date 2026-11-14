@@ -147,6 +147,43 @@ async def test_get_all_guest_messages_returns_all_sources() -> None:
     assert sources == {"guest", "host"}
 
 
+@pytest.mark.asyncio
+async def test_get_all_guest_messages_passes_max_age_on_every_page() -> None:
+    """max_age_days is sent as Beds24 ``maxAge`` on each page; omitted by default."""
+    http = _mock_http()
+    http.get.side_effect = [
+        _resp(
+            {"success": True, "data": [{"id": 1}], "pages": {"nextPageExists": True}}
+        ),
+        _resp(
+            {"success": True, "data": [{"id": 2}], "pages": {"nextPageExists": False}}
+        ),
+    ]
+    client = Beds24Client(http)
+    client._access_token = "access-abc"
+
+    result = await client.get_all_guest_messages(max_age_days=3)
+
+    assert [m["id"] for m in result] == [1, 2]
+    sent = [call.kwargs["params"] for call in http.get.call_args_list]
+    assert sent == [{"page": 1, "maxAge": 3}, {"page": 2, "maxAge": 3}]
+
+
+@pytest.mark.asyncio
+async def test_get_messages_without_max_age_sends_page_only() -> None:
+    """Backward compatible: no maxAge filter unless explicitly requested."""
+    http = _mock_http()
+    http.get.return_value = _resp(
+        {"success": True, "data": [], "pages": {"nextPageExists": False}}
+    )
+    client = Beds24Client(http)
+    client._access_token = "access-abc"
+
+    await client.get_messages(page=1)
+
+    assert http.get.call_args.kwargs["params"] == {"page": 1}
+
+
 # ---------------------------------------------------------------------------
 # get_bookings()
 # ---------------------------------------------------------------------------

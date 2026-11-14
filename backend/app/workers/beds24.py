@@ -76,7 +76,9 @@ async def _poll_once(client: Beds24Client, refresh_token: str) -> str:
         await _persist_refresh_token(new_token)
         refresh_token = new_token
 
-    messages = await client.get_all_guest_messages()
+    messages = await client.get_all_guest_messages(
+        max_age_days=get_settings().beds24_messages_max_age_days
+    )
 
     if not messages:
         logger.debug("beds24.poll_complete count=0")
