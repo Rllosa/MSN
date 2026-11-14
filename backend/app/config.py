@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     # Beds24 channel manager
     beds24_refresh_token: str
     beds24_poll_interval_seconds: int = 60
+    # Only re-read recent messages on each poll (ingest is idempotent). Must cover
+    # the longest expected outage; raise temporarily to backfill older messages.
+    beds24_messages_max_age_days: int = 3
 
     # IMAP
     imap_host: str
