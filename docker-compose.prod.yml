@@ -39,7 +39,10 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379/0
-      WEB_CONCURRENCY: 2
+      # Must stay 1: every uvicorn process runs the FastAPI lifespan, so N processes
+      # start N IMAP / Beds24 / archive workers (duplicate polling → Beds24 429,
+      # archive_lock is per-process only). WebSocket fan-out already goes via Redis.
+      WEB_CONCURRENCY: 1
     networks:
       - msn
     depends_on:
